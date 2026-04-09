@@ -1,5 +1,5 @@
 import { db } from './db/index'
-import { songs, sections, serviceDates, lineupItems } from './db/schema'
+import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, like, or } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
@@ -297,6 +297,93 @@ ipcMain.handle('lineup:toggleSection', (_e, lineupItemId: number, sectionId: num
     .run()
 
   return updated
+})
+
+// ── Theme IPC handlers ────────────────────────────────────────────────────────
+
+ipcMain.handle('themes:getAll', () => {
+  return db.select().from(themes).orderBy(asc(themes.name)).all()
+})
+
+ipcMain.handle('themes:getDefault', () => {
+  return db.select().from(themes).where(eq(themes.isDefault, true)).get() ?? null
+})
+
+ipcMain.handle('themes:create', (_e, data: {
+  name: string
+  type: 'global' | 'seasonal' | 'per-song'
+  isDefault: boolean
+  seasonStart?: string
+  seasonEnd?: string
+  settings: string
+}) => {
+  const [created] = db.insert(themes).values(data).returning().all()
+  return created
+})
+
+ipcMain.handle('themes:update', (_e, id: number, data: {
+  name?: string
+  settings?: string
+  isDefault?: boolean
+  seasonStart?: string
+  seasonEnd?: string
+}) => {
+  db.update(themes).set(data).where(eq(themes.id, id)).run()
+  return db.select().from(themes).where(eq(themes.id, id)).get()
+})
+
+ipcMain.handle('themes:delete', (_e, id: number) => {
+  db.delete(themes).where(eq(themes.id, id)).run()
+  return true
+})
+
+// ── Analytics IPC handlers ────────────────────────────────────────────────────
+
+ipcMain.handle('analytics:getSongUsage', () => {
+  // Return all songs with their usage count and last used date
+  const allSongs = db.select().from(songs).orderBy(asc(songs.title)).all()
+  const usageData = db.select().from(songUsage).all()
+  const serviceDateData = db.select().from(serviceDates).all()
+
+  return allSongs.map(song => {
+    const usages = usageData.filter(u => u.songId === song.id)
+    const lastUsage = usages.sort((a, b) =>
+      new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime()
+    )[0]
+    const lastServiceDate = lastUsage
+      ? serviceDateData.find(s => s.id === lastUsage.serviceDateId)
+      : null
+
+    return {
+      ...song,
+      usageCount: usages.length,
+      lastUsedDate: lastServiceDate?.date ?? null,
+      lastUsedLabel: lastServiceDate?.label ?? null
+    }
+  })
+})
+
+ipcMain.handle('analytics:getServiceHistory', () => {
+  return db.select().from(serviceDates)
+    .orderBy(desc(serviceDates.date))
+    .all()
+})
+
+ipcMain.handle('analytics:recordUsage', (_e, songId: number, serviceDateId: number) => {
+  // Avoid duplicate entries
+  const existing = db.select().from(songUsage)
+    .where(eq(songUsage.songId, songId))
+    .all()
+    .find(u => u.serviceDateId === serviceDateId)
+
+  if (existing) return existing
+
+  const [created] = db.insert(songUsage).values({
+    songId,
+    serviceDateId,
+    usedAt: new Date().toISOString()
+  }).returning().all()
+  return created
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

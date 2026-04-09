@@ -60,7 +60,20 @@ contextBridge.exposeInMainWorld('worshipsync', {
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>
                         ipcRenderer.invoke('lineup:toggleSection', lineupItemId, sectionId, included),
-},
+  },
+  themes: {
+    getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),
+    getDefault: ()                    => ipcRenderer.invoke('themes:getDefault'),
+    create:     (data: unknown)       => ipcRenderer.invoke('themes:create', data),
+    update:     (id: number, data: unknown) => ipcRenderer.invoke('themes:update', id, data),
+    delete:     (id: number)          => ipcRenderer.invoke('themes:delete', id),
+  },
+
+  analytics: {
+    getSongUsage:     ()                                          => ipcRenderer.invoke('analytics:getSongUsage'),
+    getServiceHistory: ()                                         => ipcRenderer.invoke('analytics:getServiceHistory'),
+    recordUsage:      (songId: number, serviceDateId: number)    => ipcRenderer.invoke('analytics:recordUsage', songId, serviceDateId),
+  },
 })
 
 interface SlidePayload {

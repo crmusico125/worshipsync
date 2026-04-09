@@ -24,6 +24,34 @@ interface LineupItemWithSong {
   overrideBackgroundPath: string | null
   song: SongWithSections
 }
+interface Theme {
+  id: number
+  name: string
+  type: 'global' | 'seasonal' | 'per-song'
+  isDefault: boolean
+  seasonStart: string | null
+  seasonEnd: string | null
+  settings: string
+  createdAt: string
+}
+
+interface ThemeSettings {
+  fontFamily: string
+  fontSize: number
+  fontWeight: string
+  textColor: string
+  textAlign: 'left' | 'center' | 'right'
+  textPosition: 'top' | 'middle' | 'bottom'
+  overlayOpacity: number
+  textShadowOpacity: number
+  maxLinesPerSlide: number
+}
+
+interface SongWithUsage extends Song {
+  usageCount: number
+  lastUsedDate: string | null
+  lastUsedLabel: string | null
+}
 
 declare global {
   interface Window {
@@ -67,6 +95,18 @@ declare global {
         removeSong:     (lineupItemId: number) => Promise<boolean>
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
+      }
+      themes: {
+        getAll:     () => Promise<Theme[]>
+        getDefault: () => Promise<Theme | null>
+        create:     (data: unknown) => Promise<Theme>
+        update:     (id: number, data: unknown) => Promise<Theme>
+        delete:     (id: number) => Promise<boolean>
+      }
+      analytics: {
+        getSongUsage:      () => Promise<SongWithUsage[]>
+        getServiceHistory: () => Promise<ServiceDate[]>
+        recordUsage:       (songId: number, serviceDateId: number) => Promise<unknown>
       }
     }
   }
