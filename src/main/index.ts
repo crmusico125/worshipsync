@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, screen, dialog } from 'electron'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { join, extname } from 'path'
-import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'fs'
+import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, like, or } from 'drizzle-orm'
@@ -471,6 +471,56 @@ ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {
     console.error('[backgrounds] delete failed:', e)
     return false
   }
+})
+
+// ── App state persistence ─────────────────────────────────────────────────────
+
+const appStatePath = () => join(app.getPath('userData'), 'app-state.json')
+
+function readAppState(): Record<string, any> {
+  try {
+    return JSON.parse(readFileSync(appStatePath(), 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+function writeAppState(data: Record<string, any>): void {
+  try {
+    const current = readAppState()
+    writeFileSync(appStatePath(), JSON.stringify({ ...current, ...data }), 'utf-8')
+  } catch {}
+}
+
+ipcMain.handle('app:getState', () => readAppState())
+
+ipcMain.handle('app:setState', (_e, data: Record<string, any>) => {
+  writeAppState(data)
+  return true
+})
+
+ipcMain.handle('app:getTodayService', () => {
+  const today = new Date().toISOString().split('T')[0]
+  const todayService = db.select().from(serviceDates)
+    .where(eq(serviceDates.date, today))
+    .get()
+  if (todayService) return { service: todayService, daysAway: 0 }
+
+  // Find next upcoming service within 7 days
+  const upcoming = db.select().from(serviceDates)
+    .orderBy(asc(serviceDates.date))
+    .all()
+    .find(s => s.date > today)
+
+  if (!upcoming) return null
+
+  const daysAway = Math.round(
+    (new Date(upcoming.date + 'T00:00:00').getTime() - new Date(today + 'T00:00:00').getTime())
+    / (1000 * 60 * 60 * 24)
+  )
+
+  if (daysAway > 7) return null
+  return { service: upcoming, daysAway }
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

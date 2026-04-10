@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useServiceStore } from "../store/useServiceStore";
+import { useQuickLaunch } from "../store/useQuickLaunch";
 
 function getNextSundays(count: number): string[] {
   const sundays: string[] = [];
@@ -61,9 +62,10 @@ const STATUS_CONFIG = {
 
 interface Props {
   onOpenBuilder: (serviceId: number) => void;
+  onGoLive: () => void;
 }
 
-export default function PlannerScreen({ onOpenBuilder }: Props) {
+export default function PlannerScreen({ onOpenBuilder, onGoLive }: Props) {
   const {
     services,
     selectedService,
@@ -75,6 +77,7 @@ export default function PlannerScreen({ onOpenBuilder }: Props) {
   } = useServiceStore();
   const [showNewModal, setShowNewModal] = useState(false);
   const [initializing, setInitializing] = useState(false);
+  const { todayResult, loading: qlLoading, launch } = useQuickLaunch();
 
   useEffect(() => {
     loadServices();
@@ -91,203 +94,308 @@ export default function PlannerScreen({ onOpenBuilder }: Props) {
   };
 
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-      {/* ── Left: service list ───────────────────────────────────────────── */}
-      <div
-        style={{
-          width: 280,
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          borderRight: "1px solid var(--border-subtle)",
-          overflow: "hidden",
-        }}
-      >
-        {/* Toolbar */}
+    <div
+      style={{
+        display: "flex",
+        height: "100%",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Quick launch banner ──────────────────────────────────────────── */}
+      {!qlLoading && todayResult && (
         <div
           style={{
-            padding: "10px 12px",
-            borderBottom: "1px solid var(--border-subtle)",
-            display: "flex",
-            gap: 6,
             flexShrink: 0,
+            background:
+              todayResult.daysAway === 0
+                ? "var(--accent-green-dim)"
+                : "var(--accent-blue-dim)",
+            borderBottom: `1px solid ${todayResult.daysAway === 0 ? "var(--accent-green)" : "var(--accent-blue)"}`,
+            padding: "10px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
           }}
         >
-          <button
-            className="btn btn-primary"
-            style={{ flex: 1, justifyContent: "center", fontSize: 11 }}
-            onClick={() => setShowNewModal(true)}
-          >
-            + New service date
-          </button>
-        </div>
-
-        {/* Empty state */}
-        {services.length === 0 && (
+          {/* Pulse dot */}
           <div
             style={{
-              padding: 16,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
+              width: 9,
+              height: 9,
+              borderRadius: "50%",
+              flexShrink: 0,
+              background:
+                todayResult.daysAway === 0
+                  ? "var(--accent-green)"
+                  : "var(--accent-blue)",
+              animation: "pulse 2s infinite",
             }}
-          >
+          />
+
+          {/* Message */}
+          <div style={{ flex: 1 }}>
             <div
               style={{
-                fontSize: 12,
-                color: "var(--text-muted)",
-                lineHeight: 1.6,
+                fontSize: 13,
+                fontWeight: 600,
+                color:
+                  todayResult.daysAway === 0
+                    ? "var(--accent-green)"
+                    : "var(--accent-blue)",
               }}
             >
-              No service dates yet. Add upcoming Sundays to get started.
+              {todayResult.daysAway === 0
+                ? `Today's service — ${todayResult.service.label}`
+                : `${todayResult.service.label} is in ${todayResult.daysAway} day${todayResult.daysAway > 1 ? "s" : ""}`}
             </div>
-            <button
-              className="btn btn-success"
-              style={{ fontSize: 11 }}
-              onClick={handleInitSundays}
-              disabled={initializing}
+            <div
+              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}
             >
-              {initializing ? "Creating..." : "Add next 6 Sundays"}
-            </button>
+              {todayResult.service.date} ·{" "}
+              {todayResult.service.status === "ready"
+                ? "Lineup ready"
+                : todayResult.service.status === "in-progress"
+                  ? "Lineup in progress"
+                  : "No lineup yet"}
+            </div>
           </div>
-        )}
 
-        {/* Service list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-          {services.map((service) => {
-            const daysAway = getDaysAway(service.date);
-            const { month, day } = formatShortDate(service.date);
-            const status = STATUS_CONFIG[service.status];
-            const isSelected = selectedService?.id === service.id;
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button
+              className="btn"
+              style={{ fontSize: 12 }}
+              onClick={() =>
+                launch(todayResult.service, (serviceId) =>
+                  onOpenBuilder(serviceId),
+                )
+              }
+            >
+              Open in builder
+            </button>
 
-            return (
-              <div
-                key={service.id}
-                onClick={() => selectService(service)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "9px 10px",
-                  borderRadius: 8,
-                  marginBottom: 5,
-                  cursor: "pointer",
-                  border: `1px solid ${isSelected ? "rgba(77,142,240,0.3)" : "var(--border-subtle)"}`,
-                  background: isSelected
-                    ? "var(--accent-blue-dim)"
-                    : "var(--surface-1)",
+            {todayResult.daysAway === 0 ? (
+              <button
+                className="btn btn-success"
+                style={{ fontSize: 12, fontWeight: 600 }}
+                onClick={async () => {
+                  await launch(todayResult.service, () => {});
+                  onGoLive();
                 }}
               >
-                {/* Date badge */}
+                ▶ Go live now
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                style={{ fontSize: 12, fontWeight: 600 }}
+                onClick={() =>
+                  launch(todayResult.service, (serviceId) =>
+                    onOpenBuilder(serviceId),
+                  )
+                }
+              >
+                Prepare lineup →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main content: left + right columns ──────────────────────────── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        {/* Left: service list */}
+        <div
+          style={{
+            width: 280,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            borderRight: "1px solid var(--border-subtle)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 12px",
+              borderBottom: "1px solid var(--border-subtle)",
+              display: "flex",
+              gap: 6,
+              flexShrink: 0,
+            }}
+          >
+            <button
+              className="btn btn-primary"
+              style={{ flex: 1, justifyContent: "center", fontSize: 11 }}
+              onClick={() => setShowNewModal(true)}
+            >
+              + New service date
+            </button>
+          </div>
+
+          {services.length === 0 && (
+            <div
+              style={{
+                padding: 16,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  lineHeight: 1.6,
+                }}
+              >
+                No service dates yet. Add upcoming Sundays to get started.
+              </div>
+              <button
+                className="btn btn-success"
+                style={{ fontSize: 11 }}
+                onClick={handleInitSundays}
+                disabled={initializing}
+              >
+                {initializing ? "Creating..." : "Add next 6 Sundays"}
+              </button>
+            </div>
+          )}
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
+            {services.map((service) => {
+              const daysAway = getDaysAway(service.date);
+              const { month, day } = formatShortDate(service.date);
+              const status = STATUS_CONFIG[service.status];
+              const isSelected = selectedService?.id === service.id;
+
+              return (
                 <div
+                  key={service.id}
+                  onClick={() => selectService(service)}
                   style={{
                     display: "flex",
-                    flexDirection: "column",
                     alignItems: "center",
-                    minWidth: 36,
-                    flexShrink: 0,
+                    gap: 10,
+                    padding: "9px 10px",
+                    borderRadius: 8,
+                    marginBottom: 5,
+                    cursor: "pointer",
+                    border: `1px solid ${isSelected ? "rgba(77,142,240,0.3)" : "var(--border-subtle)"}`,
+                    background: isSelected
+                      ? "var(--accent-blue-dim)"
+                      : "var(--surface-1)",
                   }}
                 >
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      minWidth: 36,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 9,
+                        color: isSelected
+                          ? "var(--accent-blue)"
+                          : "var(--text-muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      {month}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 20,
+                        fontWeight: 700,
+                        color: isSelected
+                          ? "var(--accent-blue)"
+                          : "var(--text-primary)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {day}
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: isSelected
+                          ? "var(--accent-blue)"
+                          : "var(--text-primary)",
+                        marginBottom: 3,
+                      }}
+                    >
+                      {service.label}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: isSelected
+                          ? "var(--accent-blue)"
+                          : "var(--text-muted)",
+                      }}
+                    >
+                      {daysAway === 0
+                        ? "Today"
+                        : daysAway === 1
+                          ? "Tomorrow"
+                          : `${daysAway} days away`}
+                    </div>
+                  </div>
+
                   <div
                     style={{
                       fontSize: 9,
-                      color: isSelected
-                        ? "var(--accent-blue)"
-                        : "var(--text-muted)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    {month}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color: isSelected
-                        ? "var(--accent-blue)"
-                        : "var(--text-primary)",
-                      lineHeight: 1,
-                    }}
-                  >
-                    {day}
-                  </div>
-                </div>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 12,
+                      padding: "2px 7px",
+                      borderRadius: 20,
                       fontWeight: 600,
-                      color: isSelected
-                        ? "var(--accent-blue)"
-                        : "var(--text-primary)",
-                      marginBottom: 3,
+                      background: status.bg,
+                      color: status.color,
+                      border: `1px solid ${status.border}`,
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {service.label}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: isSelected
-                        ? "var(--accent-blue)"
-                        : "var(--text-muted)",
-                    }}
-                  >
-                    {daysAway === 0
-                      ? "Today"
-                      : daysAway === 1
-                        ? "Tomorrow"
-                        : `${daysAway} days away`}
+                    {status.label}
                   </div>
                 </div>
-
-                {/* Status badge */}
-                <div
-                  style={{
-                    fontSize: 9,
-                    padding: "2px 7px",
-                    borderRadius: 20,
-                    fontWeight: 600,
-                    background: status.bg,
-                    color: status.color,
-                    border: `1px solid ${status.border}`,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {status.label}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Right: selected service detail ───────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-        {selectedService ? (
-          <ServiceDetail
-            service={selectedService}
-            onOpenBuilder={() => onOpenBuilder(selectedService.id)}
-            onStatusChange={updateStatus}
-            onDelete={deleteService}
-          />
-        ) : (
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--text-muted)",
-              fontSize: 12,
-            }}
-          >
-            Select a service date to see details
+              );
+            })}
           </div>
-        )}
+        </div>
+
+        {/* Right: service detail */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+          {selectedService ? (
+            <ServiceDetail
+              service={selectedService}
+              onOpenBuilder={() => onOpenBuilder(selectedService.id)}
+              onStatusChange={updateStatus}
+              onDelete={deleteService}
+            />
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+                fontSize: 12,
+              }}
+            >
+              Select a service date to see details
+            </div>
+          )}
+        </div>
       </div>
 
       {showNewModal && (
@@ -350,7 +458,6 @@ function ServiceDetail({
         maxWidth: 680,
       }}
     >
-      {/* Header */}
       <div
         style={{
           display: "flex",
@@ -409,7 +516,6 @@ function ServiceDetail({
         </div>
       </div>
 
-      {/* Status selector */}
       <div className="card">
         <div className="label" style={{ marginBottom: 10 }}>
           Service status
@@ -442,7 +548,6 @@ function ServiceDetail({
         </div>
       </div>
 
-      {/* Lineup preview */}
       <div className="card">
         <div
           style={{
@@ -532,7 +637,6 @@ function ServiceDetail({
         )}
       </div>
 
-      {/* Readiness checklist */}
       <div className="card">
         <div className="label" style={{ marginBottom: 10 }}>
           Readiness checklist

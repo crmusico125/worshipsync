@@ -334,7 +334,7 @@ export default function LibraryScreen() {
               </div>
               <select
                 className="input"
-                value={selectedSong.themeId ?? ""}
+                value={selectedSong.themeId ? String(selectedSong.themeId) : ""}
                 onChange={async (e) => {
                   const themeId = e.target.value
                     ? parseInt(e.target.value)

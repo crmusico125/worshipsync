@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getUsageCount: (imagePath: string) => ipcRenderer.invoke('backgrounds:getUsageCount', imagePath),
     deleteImage:   (imagePath: string) => ipcRenderer.invoke('backgrounds:deleteImage', imagePath),
   },
+  appState: {
+    get:              ()                          => ipcRenderer.invoke('app:getState'),
+    set:              (data: Record<string, any>) => ipcRenderer.invoke('app:setState', data),
+    getTodayService:  ()                          => ipcRenderer.invoke('app:getTodayService'),
+  },
 })
 
 interface SlidePayload {

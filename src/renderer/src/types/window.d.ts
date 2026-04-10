@@ -53,6 +53,11 @@ interface SongWithUsage extends Song {
   lastUsedLabel: string | null
 }
 
+interface TodayServiceResult {
+  service: ServiceDate
+  daysAway: number
+}
+
 declare global {
   interface Window {
     worshipsync: {
@@ -115,6 +120,11 @@ declare global {
         listImages: () => Promise<string[]>
         getUsageCount: (imagePath: string) => Promise<number>
         deleteImage:   (imagePath: string) => Promise<boolean>
+      }
+      appState: {
+        get:             () => Promise<Record<string, any>>
+        set:             (data: Record<string, any>) => Promise<boolean>
+        getTodayService: () => Promise<TodayServiceResult | null>
       }
     }
   }

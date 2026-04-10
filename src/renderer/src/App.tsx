@@ -19,6 +19,10 @@ export default function App() {
     const { selectedService, loadLineup } = useServiceStore.getState();
     if (selectedService) {
       await loadLineup(selectedService.id);
+      // Remember this service for next app open
+      await window.worshipsync.appState.set({
+        lastServiceId: selectedService.id,
+      });
     }
     if (!projectionOpen) {
       window.worshipsync.window.openProjection();
@@ -26,6 +30,28 @@ export default function App() {
     }
     setCurrentScreen("live");
   }, [projectionOpen]);
+
+  useEffect(() => {
+    // On startup, restore last active service
+    window.worshipsync.appState
+      .get()
+      .then(async (state: Record<string, any>) => {
+        if (state.lastServiceId) {
+          const { loadServices, selectService } = useServiceStore.getState();
+          await loadServices();
+          const lastService = useServiceStore
+            .getState()
+            .services.find((s) => s.id === state.lastServiceId);
+          if (lastService) {
+            await selectService(lastService);
+            setActiveServiceId(lastService.id);
+          }
+        }
+      })
+      .catch(() => {
+        // appState not available yet or file doesn't exist — fine on first launch
+      });
+  }, []);
 
   // Also reload when navigating to live via sidebar
   useEffect(() => {
@@ -60,7 +86,10 @@ export default function App() {
         <TopBar screen={currentScreen} projectionOpen={projectionOpen} />
         <div style={{ flex: 1, overflow: "hidden" }}>
           {currentScreen === "planner" && (
-            <PlannerScreen onOpenBuilder={handleOpenBuilder} />
+            <PlannerScreen
+              onOpenBuilder={handleOpenBuilder}
+              onGoLive={handleGoLive}
+            />
           )}
           {currentScreen === "builder" && (
             <BuilderScreen
