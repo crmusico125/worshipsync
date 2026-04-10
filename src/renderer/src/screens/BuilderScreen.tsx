@@ -18,6 +18,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     loadServices,
     selectService,
     services,
+    reorderLineup,
   } = useServiceStore();
   const { songs, loadSongs } = useSongStore();
   const [songSearch, setSongSearch] = useState("");
@@ -41,6 +42,20 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
       (s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
         s.artist.toLowerCase().includes(songSearch.toLowerCase())),
   );
+
+  const moveUp = async (i: number) => {
+    if (i === 0) return;
+    const ids = lineup.map((l) => l.id);
+    [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
+    await reorderLineup(ids);
+  };
+
+  const moveDown = async (i: number) => {
+    if (i === lineup.length - 1) return;
+    const ids = lineup.map((l) => l.id);
+    [ids[i], ids[i + 1]] = [ids[i + 1], ids[i]];
+    await reorderLineup(ids);
+  };
 
   if (!selectedService) {
     return (
@@ -176,6 +191,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                       borderBottom: "1px solid var(--border-subtle)",
                     }}
                   >
+                    {/* Order number */}
                     <div
                       style={{
                         width: 24,
@@ -200,6 +216,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                     >
                       {i + 1}
                     </div>
+
+                    {/* Song info */}
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600 }}>
                         {item.song.title}
@@ -215,12 +233,50 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                         {item.song.key && ` · Key of ${item.song.key}`}
                       </div>
                     </div>
+
+                    {/* Reorder buttons */}
+                    <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+                      <button
+                        className="btn"
+                        title="Move up"
+                        disabled={i === 0}
+                        onClick={() => moveUp(i)}
+                        style={{
+                          fontSize: 13,
+                          padding: "2px 8px",
+                          opacity: i === 0 ? 0.3 : 1,
+                          cursor: i === 0 ? "default" : "pointer",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="btn"
+                        title="Move down"
+                        disabled={i === lineup.length - 1}
+                        onClick={() => moveDown(i)}
+                        style={{
+                          fontSize: 13,
+                          padding: "2px 8px",
+                          opacity: i === lineup.length - 1 ? 0.3 : 1,
+                          cursor:
+                            i === lineup.length - 1 ? "default" : "pointer",
+                          lineHeight: 1,
+                        }}
+                      >
+                        ↓
+                      </button>
+                    </div>
+
+                    {/* Remove button */}
                     <button
                       className="btn"
                       style={{
                         fontSize: 10,
                         padding: "3px 8px",
                         color: "var(--accent-red)",
+                        flexShrink: 0,
                       }}
                       onClick={() => removeSongFromLineup(item.id)}
                     >
@@ -325,7 +381,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
         </div>
       </div>
 
-      {/* ── Right: song picker (shown inline when open) ───────────────────── */}
+      {/* ── Right: song picker ────────────────────────────────────────────── */}
       {showSongPicker && (
         <div
           style={{
