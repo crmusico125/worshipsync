@@ -73,6 +73,21 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isBlank, setIsBlank] = useState(false);
   const [isLogo, setIsLogo] = useState(false);
+  const [defaultThemeBackground, setDefaultThemeBackground] = useState<
+    string | null
+  >(null);
+
+  useEffect(() => {
+    // Load default theme background on mount
+    window.worshipsync.themes.getDefault().then((theme: any) => {
+      if (theme?.settings) {
+        try {
+          const settings = JSON.parse(theme.settings);
+          setDefaultThemeBackground(settings.backgroundPath ?? null);
+        } catch {}
+      }
+    });
+  }, []);
 
   // Build live songs from lineup
   useEffect(() => {
@@ -106,16 +121,20 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
       const slide = section.slides[slideIdx];
       if (!slide) return;
 
+      // Per-song background takes priority, falls back to theme background
+      const backgroundPath =
+        songs[songIdx].backgroundPath ?? defaultThemeBackground ?? undefined;
+
       window.worshipsync.slide.show({
         lines: slide.lines,
         songTitle: songs[songIdx].title,
         sectionLabel: section.label,
         slideIndex: slideIdx,
         totalSlides: section.slides.length,
-        backgroundPath: songs[songIdx].backgroundPath ?? undefined,
+        backgroundPath,
       });
     },
-    [],
+    [defaultThemeBackground],
   );
 
   // Navigation
@@ -542,34 +561,32 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
             }}
           >
             {/* Background layer */}
-            {currentSong?.backgroundPath &&
-              !isBlank &&
-              !isLogo &&
-              (() => {
-                const bg = currentSong.backgroundPath!;
-                if (bg.startsWith("color:")) {
-                  return (
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        background: bg.replace("color:", ""),
-                      }}
-                    />
-                  );
-                }
+            {(() => {
+              const bg = currentSong?.backgroundPath ?? defaultThemeBackground;
+              if (!bg || isBlank || isLogo) return null;
+              if (bg.startsWith("color:")) {
                 return (
                   <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      backgroundImage: `url("file://${encodeURI(bg)}")`,
-                      backgroundSize: "cover",
-                      backgroundPosition: "center",
+                      background: bg.replace("color:", ""),
                     }}
                   />
                 );
-              })()}
+              }
+              return (
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    backgroundImage: `url("file://${encodeURI(bg)}")`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }}
+                />
+              );
+            })()}
 
             {/* Dark overlay */}
             {!isBlank && !isLogo && (

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, screen, dialog } from 'electron'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { join, extname } from 'path'
-import { copyFileSync, mkdirSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, like, or } from 'drizzle-orm'
@@ -417,12 +417,60 @@ ipcMain.handle('backgrounds:pickImage', async () => {
   return destPath
 })
 
+ipcMain.handle('backgrounds:listImages', () => {
+  const dir = join(app.getPath('userData'), 'backgrounds')
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .map(f => join(dir, f))
+})
+
 ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: string | null) => {
   db.update(songs)
     .set({ backgroundPath, updatedAt: new Date().toISOString() })
     .where(eq(songs.id, songId))
     .run()
   return db.select().from(songs).where(eq(songs.id, songId)).get()
+})
+
+ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
+  // Count how many songs use this image
+  const usingSongs = db.select().from(songs)
+    .all()
+    .filter(s => s.backgroundPath === imagePath)
+  return usingSongs.length
+})
+
+ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {
+  try {
+    // Clear from any songs using it
+    db.update(songs)
+      .set({ backgroundPath: null })
+      .where(eq(songs.backgroundPath, imagePath))
+      .run()
+
+    // Also clear from any themes using it
+    const allThemes = db.select().from(themes).all()
+    for (const theme of allThemes) {
+      try {
+        const settings = JSON.parse(theme.settings)
+        if (settings.backgroundPath === imagePath) {
+          settings.backgroundPath = null
+          db.update(themes)
+            .set({ settings: JSON.stringify(settings) })
+            .where(eq(themes.id, theme.id))
+            .run()
+        }
+      } catch {}
+    }
+
+    // Delete the file
+    unlinkSync(imagePath)
+    return true
+  } catch (e) {
+    console.error('[backgrounds] delete failed:', e)
+    return false
+  }
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

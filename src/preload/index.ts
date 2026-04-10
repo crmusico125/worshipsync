@@ -78,7 +78,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getDir:      ()               => ipcRenderer.invoke('backgrounds:getDir'),
     pickImage:   ()               => ipcRenderer.invoke('backgrounds:pickImage'),
     setBackground: (songId: number, path: string | null) =>
-      ipcRenderer.invoke('songs:setBackground', songId, path)
+      ipcRenderer.invoke('songs:setBackground', songId, path),
+    listImages: () => ipcRenderer.invoke('backgrounds:listImages'),
+    getUsageCount: (imagePath: string) => ipcRenderer.invoke('backgrounds:getUsageCount', imagePath),
+    deleteImage:   (imagePath: string) => ipcRenderer.invoke('backgrounds:deleteImage', imagePath),
   },
 })
 

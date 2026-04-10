@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
 
 interface ThemeSettings {
   fontFamily: string;
@@ -10,6 +11,7 @@ interface ThemeSettings {
   overlayOpacity: number;
   textShadowOpacity: number;
   maxLinesPerSlide: number;
+  backgroundPath: string | null;
 }
 
 interface Theme {
@@ -33,6 +35,7 @@ const DEFAULT_SETTINGS: ThemeSettings = {
   overlayOpacity: 45,
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
+  backgroundPath: null,
 };
 
 const FONT_OPTIONS = [
@@ -571,6 +574,33 @@ export default function ThemesScreen() {
                   overflow: "hidden",
                 }}
               >
+                {/* Background layer */}
+                {settings.backgroundPath &&
+                  (() => {
+                    const bg = settings.backgroundPath!;
+                    if (bg.startsWith("color:")) {
+                      return (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            background: bg.replace("color:", ""),
+                          }}
+                        />
+                      );
+                    }
+                    return (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          backgroundImage: `url("file://${encodeURI(bg)}")`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }}
+                      />
+                    );
+                  })()}
                 {/* Overlay */}
                 <div
                   style={{
@@ -609,6 +639,26 @@ export default function ThemesScreen() {
                 }}
               >
                 Preview — actual size on projector
+              </div>
+            </div>
+
+            {/* Background */}
+            <div
+              className="card"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                gridColumn: "1 / -1", // ← spans full width
+              }}
+            >
+              <div className="label">Background</div>
+              <div style={{ maxWidth: 360 }}>
+                <BackgroundPickerPanel
+                  currentBackground={settings.backgroundPath ?? null}
+                  previewLabel="Way Maker · Chorus"
+                  onSelect={(bg) => updateSetting("backgroundPath", bg as any)}
+                />
               </div>
             </div>
           </div>

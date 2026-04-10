@@ -112,6 +112,9 @@ declare global {
         getDir:        () => Promise<string>
         pickImage:     () => Promise<string | null>
         setBackground: (songId: number, path: string | null) => Promise<Song>
+        listImages: () => Promise<string[]>
+        getUsageCount: (imagePath: string) => Promise<number>
+        deleteImage:   (imagePath: string) => Promise<boolean>
       }
     }
   }
