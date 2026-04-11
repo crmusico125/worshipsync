@@ -161,7 +161,7 @@ function QuickCreateForm({ onCreated, onCancel }: CreateFormProps) {
 
         {/* Sections */}
         <div className="label" style={{ marginBottom: 6 }}>Sections</div>
-        {sections.map((sec, idx) => (
+        {sections.map((sec) => (
           <div
             key={sec.tempId}
             style={{
@@ -502,7 +502,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     closePicker();
   };
 
-  const handleSectionsSaved = async (item: (typeof lineup)[number]) => {
+  const handleSectionsSaved = async () => {
     setEditingItemId(null);
     if (selectedService) await loadLineup(selectedService.id);
   };
@@ -784,7 +784,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                     <InlineSectionEditor
                       songId={item.song.id}
                       initialSections={item.song.sections}
-                      onSaved={() => handleSectionsSaved(item)}
+                      onSaved={() => handleSectionsSaved()}
                       onCancel={() => setEditingItemId(null)}
                     />
                   )}

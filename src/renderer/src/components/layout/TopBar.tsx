@@ -6,6 +6,7 @@ const TITLES: Record<AppScreen, string> = {
   library: "Song library",
   themes: "Themes",
   analytics: "Analytics",
+  settings: "Settings",
   live: "Live operator panel",
 };
 

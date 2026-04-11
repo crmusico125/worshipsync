@@ -8,6 +8,7 @@ import LibraryScreen from "./screens/LibraryScreen";
 import ThemesScreen from "./screens/ThemesScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import LiveScreen from "./screens/LiveScreen";
+import SettingsScreen from "./screens/SettingsScreen";
 import { useServiceStore } from "./store/useServiceStore";
 
 export default function App() {
@@ -100,6 +101,7 @@ export default function App() {
           {currentScreen === "library" && <LibraryScreen />}
           {currentScreen === "themes" && <ThemesScreen />}
           {currentScreen === "analytics" && <AnalyticsScreen />}
+          {currentScreen === "settings" && <SettingsScreen />}
           {currentScreen === "live" && (
             <LiveScreen
               onClose={handleCloseProjection}

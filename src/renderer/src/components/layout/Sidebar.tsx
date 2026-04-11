@@ -13,6 +13,7 @@ const NAV_ITEMS: { id: AppScreen; label: string; icon: string }[] = [
   { id: "library", label: "Library", icon: "📖" },
   { id: "themes", label: "Themes", icon: "🎨" },
   { id: "analytics", label: "Analytics", icon: "📊" },
+  { id: "settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function Sidebar({

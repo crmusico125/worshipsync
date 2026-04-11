@@ -88,6 +88,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     set:              (data: Record<string, any>) => ipcRenderer.invoke('app:setState', data),
     getTodayService:  ()                          => ipcRenderer.invoke('app:getTodayService'),
   },
+  data: {
+    export: () => ipcRenderer.invoke('data:export'),
+    import: () => ipcRenderer.invoke('data:import'),
+  },
 })
 
 interface SlidePayload {
