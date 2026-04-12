@@ -27,7 +27,7 @@ export default function Sidebar({
       {/* App logo */}
       <div
         style={{
-          padding: "8px 10px 14px",
+          padding: "36px 10px 14px",
           borderBottom: "1px solid var(--border-subtle)",
           marginBottom: "6px",
         }}

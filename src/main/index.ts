@@ -32,6 +32,7 @@ function createControlWindow(): void {
 
   controlWindow.on('ready-to-show', () => {
     controlWindow?.show()
+    controlWindow?.maximize()
   })
 
   controlWindow.webContents.setWindowOpenHandler(({ url }) => {

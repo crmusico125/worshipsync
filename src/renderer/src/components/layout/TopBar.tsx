@@ -1,3 +1,4 @@
+import React from "react";
 import type { AppScreen } from "../../../../../shared/types";
 
 const TITLES: Record<AppScreen, string> = {
@@ -27,9 +28,10 @@ export default function TopBar({ screen, projectionOpen }: Props) {
         gap: 10,
         flexShrink: 0,
         background: "var(--surface-1)",
-      }}
+        WebkitAppRegion: "drag" as React.CSSProperties["WebkitAppRegion"],
+      } as React.CSSProperties}
     >
-      <span
+<span
         style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}
       >
         {TITLES[screen]}
@@ -38,7 +40,7 @@ export default function TopBar({ screen, projectionOpen }: Props) {
       <div style={{ flex: 1 }} />
 
       {/* Projection status */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         <div
           className="status-dot"
           style={{
