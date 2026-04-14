@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useServiceStore } from "../store/useServiceStore";
 import { useSongStore } from "../store/useSongStore";
+import LibraryModal from "../components/LibraryModal";
 
 interface Props {
   serviceId: number | null;
@@ -672,11 +673,11 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     services,
     reorderLineup,
   } = useServiceStore();
-  const { songs, loadSongs } = useSongStore();
+  const { loadSongs } = useSongStore();
 
-  const [songSearch, setSongSearch] = useState("");
-  const [showSongPicker, setShowSongPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"search" | "create" | "paste">("search");
+  const [showLibraryModal, setShowLibraryModal] = useState(false);
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [pickerMode, setPickerMode] = useState<"create" | "paste">("create");
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -691,14 +692,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     }
   }, [serviceId, services]);
 
-  const filteredSongs = songs.filter(
-    (s) =>
-      !lineup.find((item) => item.songId === s.id) &&
-      (s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
-        s.artist.toLowerCase().includes(songSearch.toLowerCase())),
-  );
-
-  const moveUp = async (i: number) => {
+const moveUp = async (i: number) => {
     if (i === 0) return;
     const ids = lineup.map((l) => l.id);
     [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
@@ -712,20 +706,23 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     await reorderLineup(ids);
   };
 
-  const openPicker = (mode: "search" | "create" = "search") => {
+  const openCreatePanel = (mode: "create" | "paste" = "create") => {
     setPickerMode(mode);
-    setShowSongPicker(true);
+    setShowCreatePanel(true);
   };
 
-  const closePicker = () => {
-    setShowSongPicker(false);
-    setSongSearch("");
-  };
+  const closeCreatePanel = () => setShowCreatePanel(false);
 
   const handleCreated = async (songId: number) => {
     await loadSongs();
     await addSongToLineup(songId);
-    closePicker();
+    closeCreatePanel();
+  };
+
+  const handleLibraryAdd = async (songIds: number[]) => {
+    for (const id of songIds) {
+      await addSongToLineup(id);
+    }
   };
 
   const handleSectionsSaved = async () => {
@@ -777,7 +774,10 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               })}
             </div>
           </div>
-          <button className="btn" style={{ fontSize: 11 }} onClick={() => openPicker("search")}>
+          <button className="btn" style={{ fontSize: 11 }} onClick={() => openCreatePanel("create")}>
+            + New song
+          </button>
+          <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => setShowLibraryModal(true)}>
             + Add song
           </button>
           <button
@@ -806,10 +806,10 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                 No songs in this lineup yet
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn" onClick={() => openPicker("search")}>
+                <button className="btn" onClick={() => setShowLibraryModal(true)}>
                   Add from library
                 </button>
-                <button className="btn btn-primary" onClick={() => openPicker("create")}>
+                <button className="btn btn-primary" onClick={() => openCreatePanel("create")}>
                   + Create new song
                 </button>
               </div>
@@ -1021,8 +1021,17 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
         </div>
       </div>
 
-      {/* ── Right: song picker / quick create ────────────────────────────── */}
-      {showSongPicker && (
+      {/* ── Library modal ────────────────────────────────────────────────── */}
+      {showLibraryModal && (
+        <LibraryModal
+          onClose={() => setShowLibraryModal(false)}
+          onAdd={handleLibraryAdd}
+          excludeIds={lineup.map((item) => item.songId)}
+        />
+      )}
+
+      {/* ── Right: create / paste panel ──────────────────────────────────── */}
+      {showCreatePanel && (
         <div
           style={{
             width: 320,
@@ -1045,26 +1054,15 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             }}
           >
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>Add song</span>
-              <button className="btn" style={{ fontSize: 11 }} onClick={closePicker}>
+              <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
+                {pickerMode === "create" ? "New song" : "Paste lyrics"}
+              </span>
+              <button className="btn" style={{ fontSize: 11 }} onClick={closeCreatePanel}>
                 ✕
               </button>
             </div>
             {/* Mode tabs */}
             <div style={{ display: "flex", gap: 4 }}>
-              <button
-                className="btn"
-                style={{
-                  flex: 1,
-                  fontSize: 11,
-                  background: pickerMode === "search" ? "var(--accent-blue-dim)" : undefined,
-                  color: pickerMode === "search" ? "var(--accent-blue)" : undefined,
-                  border: pickerMode === "search" ? "1px solid var(--accent-blue)" : undefined,
-                }}
-                onClick={() => setPickerMode("search")}
-              >
-                From library
-              </button>
               <button
                 className="btn"
                 style={{
@@ -1092,66 +1090,14 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                 Paste lyrics
               </button>
             </div>
-            {pickerMode === "search" && (
-              <input
-                className="input"
-                style={{ width: "100%" }}
-                placeholder="Search songs…"
-                value={songSearch}
-                onChange={(e) => setSongSearch(e.target.value)}
-                autoFocus
-              />
-            )}
           </div>
 
           {/* Panel body */}
           {pickerMode === "paste" ? (
-            <PasteLyricsForm onCreated={handleCreated} onCancel={closePicker} />
-          ) : pickerMode === "search" ? (
-            <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-              {filteredSongs.length === 0 ? (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--text-muted)",
-                    padding: "12px 0",
-                    textAlign: "center",
-                  }}
-                >
-                  {songs.length === 0 ? "No songs in library" : songSearch ? "No matches" : "All songs already in lineup"}
-                </div>
-              ) : (
-                filteredSongs.map((song) => (
-                  <div
-                    key={song.id}
-                    onClick={() => {
-                      addSongToLineup(song.id);
-                      closePicker();
-                    }}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: 7,
-                      marginBottom: 4,
-                      cursor: "pointer",
-                      border: "1px solid var(--border-subtle)",
-                      background: "var(--surface-1)",
-                      transition: "background 0.1s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "var(--surface-1)")}
-                  >
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>{song.title}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 2 }}>
-                      {song.artist}
-                      {song.key && ` · Key of ${song.key}`}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            <PasteLyricsForm onCreated={handleCreated} onCancel={closeCreatePanel} />
           ) : (
-            <QuickCreateForm onCreated={handleCreated} onCancel={closePicker} />
-          ) }
+            <QuickCreateForm onCreated={handleCreated} onCancel={closeCreatePanel} />
+          )}
         </div>
       )}
     </div>

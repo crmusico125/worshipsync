@@ -2,6 +2,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── shadcn/ui CSS variables (dark) ──────────────────────────────────────── */
+@layer base {
+  :root {
+    --background: 240 10% 9%;
+    --foreground: 40 10% 90%;
+    --card: 240 12% 12%;
+    --card-foreground: 40 10% 90%;
+    --popover: 240 12% 12%;
+    --popover-foreground: 40 10% 90%;
+    --primary: 217 84% 62%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 240 10% 16%;
+    --secondary-foreground: 40 10% 90%;
+    --muted: 240 12% 12%;
+    --muted-foreground: 255 5% 56%;
+    --accent: 240 10% 16%;
+    --accent-foreground: 40 10% 90%;
+    --destructive: 0 72% 63%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 240 10% 18%;
+    --input: 240 10% 16%;
+    --ring: 217 84% 62%;
+    --radius: 0.5rem;
+  }
+}
+
 /* ── CSS custom properties ────────────────────────────────────────────────── */
 :root {
   --font-sans: 'Inter', system-ui, sans-serif;
