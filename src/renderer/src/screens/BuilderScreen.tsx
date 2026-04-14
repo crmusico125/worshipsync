@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useServiceStore } from "../store/useServiceStore";
 import { useSongStore } from "../store/useSongStore";
-import LibraryModal from "../components/LibraryModal";
+import LibraryModal from "../components/LibraryModal"
+import AddSongModal from "../components/AddSongModal";
 
 interface Props {
   serviceId: number | null;
@@ -676,8 +677,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const { loadSongs } = useSongStore();
 
   const [showLibraryModal, setShowLibraryModal] = useState(false);
-  const [showCreatePanel, setShowCreatePanel] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"create" | "paste">("create");
+  const [showAddSongModal, setShowAddSongModal] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -706,17 +706,9 @@ const moveUp = async (i: number) => {
     await reorderLineup(ids);
   };
 
-  const openCreatePanel = (mode: "create" | "paste" = "create") => {
-    setPickerMode(mode);
-    setShowCreatePanel(true);
-  };
-
-  const closeCreatePanel = () => setShowCreatePanel(false);
-
   const handleCreated = async (songId: number) => {
     await loadSongs();
     await addSongToLineup(songId);
-    closeCreatePanel();
   };
 
   const handleLibraryAdd = async (songIds: number[]) => {
@@ -774,7 +766,7 @@ const moveUp = async (i: number) => {
               })}
             </div>
           </div>
-          <button className="btn" style={{ fontSize: 11 }} onClick={() => openCreatePanel("create")}>
+          <button className="btn" style={{ fontSize: 11 }} onClick={() => setShowAddSongModal(true)}>
             + New song
           </button>
           <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => setShowLibraryModal(true)}>
@@ -809,7 +801,7 @@ const moveUp = async (i: number) => {
                 <button className="btn" onClick={() => setShowLibraryModal(true)}>
                   Add from library
                 </button>
-                <button className="btn btn-primary" onClick={() => openCreatePanel("create")}>
+                <button className="btn btn-primary" onClick={() => setShowAddSongModal(true)}>
                   + Create new song
                 </button>
               </div>
@@ -1030,75 +1022,11 @@ const moveUp = async (i: number) => {
         />
       )}
 
-      {/* ── Right: create / paste panel ──────────────────────────────────── */}
-      {showCreatePanel && (
-        <div
-          style={{
-            width: 320,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            borderLeft: "1px solid var(--border-subtle)",
-            overflow: "hidden",
-          }}
-        >
-          {/* Panel header */}
-          <div
-            style={{
-              padding: "10px 12px",
-              borderBottom: "1px solid var(--border-subtle)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span style={{ fontSize: 12, fontWeight: 600, flex: 1 }}>
-                {pickerMode === "create" ? "New song" : "Paste lyrics"}
-              </span>
-              <button className="btn" style={{ fontSize: 11 }} onClick={closeCreatePanel}>
-                ✕
-              </button>
-            </div>
-            {/* Mode tabs */}
-            <div style={{ display: "flex", gap: 4 }}>
-              <button
-                className="btn"
-                style={{
-                  flex: 1,
-                  fontSize: 11,
-                  background: pickerMode === "create" ? "var(--accent-blue-dim)" : undefined,
-                  color: pickerMode === "create" ? "var(--accent-blue)" : undefined,
-                  border: pickerMode === "create" ? "1px solid var(--accent-blue)" : undefined,
-                }}
-                onClick={() => setPickerMode("create")}
-              >
-                + New song
-              </button>
-              <button
-                className="btn"
-                style={{
-                  flex: 1,
-                  fontSize: 11,
-                  background: pickerMode === "paste" ? "var(--accent-blue-dim)" : undefined,
-                  color: pickerMode === "paste" ? "var(--accent-blue)" : undefined,
-                  border: pickerMode === "paste" ? "1px solid var(--accent-blue)" : undefined,
-                }}
-                onClick={() => setPickerMode("paste")}
-              >
-                Paste lyrics
-              </button>
-            </div>
-          </div>
-
-          {/* Panel body */}
-          {pickerMode === "paste" ? (
-            <PasteLyricsForm onCreated={handleCreated} onCancel={closeCreatePanel} />
-          ) : (
-            <QuickCreateForm onCreated={handleCreated} onCancel={closeCreatePanel} />
-          )}
-        </div>
+      {showAddSongModal && (
+        <AddSongModal
+          onClose={() => setShowAddSongModal(false)}
+          onCreated={handleCreated}
+        />
       )}
     </div>
   );
