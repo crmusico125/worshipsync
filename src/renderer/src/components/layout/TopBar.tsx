@@ -9,7 +9,7 @@ const TITLES: Record<AppScreen, string> = {
   themes: "Themes",
   analytics: "Analytics",
   settings: "Settings",
-  live: "Live operator panel",
+  presenter: "Presenter Dashboard",
 };
 
 interface Props {

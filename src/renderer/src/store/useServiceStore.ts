@@ -16,13 +16,18 @@ interface LineupItemWithSong {
   songId: number
   orderIndex: number
   selectedSections: string
+  overrideThemeId: number | null
+  overrideBackgroundPath: string | null
   song: {
     id: number
     title: string
     artist: string
     key: string | null
     tempo: string | null
-    sections: { id: number; type: string; label: string; lyrics: string; orderIndex: number }[]
+    ccliNumber: string | null
+    backgroundPath: string | null
+    themeId: number | null
+    sections: { id: number; songId: number; type: string; label: string; lyrics: string; orderIndex: number }[]
   }
 }
 

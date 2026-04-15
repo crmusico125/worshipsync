@@ -7,9 +7,9 @@ import BuilderScreen from "./screens/BuilderScreen";
 import LibraryScreen from "./screens/LibraryScreen";
 import ThemesScreen from "./screens/ThemesScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
-import LiveScreen from "./screens/LiveScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import ManageLineupsScreen from "./screens/ManageLineupsScreen";
+import PresenterDashboard from "./screens/PresenterDashboard";
 import { useServiceStore } from "./store/useServiceStore";
 
 export default function App() {
@@ -17,21 +17,9 @@ export default function App() {
   const [projectionOpen, setProjectionOpen] = useState(false);
   const [activeServiceId, setActiveServiceId] = useState<number | null>(null);
 
-  const handleGoLive = useCallback(async () => {
-    const { selectedService, loadLineup } = useServiceStore.getState();
-    if (selectedService) {
-      await loadLineup(selectedService.id);
-      // Remember this service for next app open
-      await window.worshipsync.appState.set({
-        lastServiceId: selectedService.id,
-      });
-    }
-    if (!projectionOpen) {
-      window.worshipsync.window.openProjection();
-      setProjectionOpen(true);
-    }
-    setCurrentScreen("live");
-  }, [projectionOpen]);
+  const handleGoLive = useCallback(() => {
+    setCurrentScreen("presenter");
+  }, []);
 
   useEffect(() => {
     // On startup, restore last active service
@@ -53,22 +41,6 @@ export default function App() {
       .catch(() => {
         // appState not available yet or file doesn't exist — fine on first launch
       });
-  }, []);
-
-  // Also reload when navigating to live via sidebar
-  useEffect(() => {
-    if (currentScreen === "live") {
-      const { selectedService, loadLineup } = useServiceStore.getState();
-      if (selectedService) {
-        loadLineup(selectedService.id);
-      }
-    }
-  }, [currentScreen]);
-
-  const handleCloseProjection = useCallback(() => {
-    window.worshipsync.window.closeProjection();
-    setProjectionOpen(false);
-    setCurrentScreen("builder");
   }, []);
 
   const handleOpenBuilder = useCallback((serviceId: number) => {
@@ -109,10 +81,10 @@ export default function App() {
               onGoLive={handleGoLive}
             />
           )}
-          {currentScreen === "live" && (
-            <LiveScreen
-              onClose={handleCloseProjection}
+          {currentScreen === "presenter" && (
+            <PresenterDashboard
               projectionOpen={projectionOpen}
+              onProjectionChange={setProjectionOpen}
             />
           )}
         </div>

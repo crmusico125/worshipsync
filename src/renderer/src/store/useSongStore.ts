@@ -1,9 +1,5 @@
 import { create } from 'zustand'
-import type { Song, Section } from '../../../../shared/types'
-
-interface SongWithSections extends Song {
-  sections: Section[]
-}
+import type { Song, SongWithSections } from '../../../../shared/types'
 
 interface SongStore {
   songs: Song[]

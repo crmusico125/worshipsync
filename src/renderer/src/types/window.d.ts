@@ -1,8 +1,4 @@
-import type { Song, Section, SlidePayload } from '../../../shared/types'
-
-interface SongWithSections extends Song {
-  sections: Section[]
-}
+import type { Song, Section, SlidePayload, SongWithSections } from '../../../shared/types'
 
 interface ServiceDate {
   id: number

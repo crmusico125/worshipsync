@@ -13,6 +13,7 @@ const NAV_ITEMS: { id: AppScreen; label: string; icon: string }[] = [
   { id: "builder", label: "Builder", icon: "🎵" },
   { id: "library", label: "Library", icon: "📖" },
   { id: "themes", label: "Themes", icon: "🎨" },
+  { id: "presenter", label: "Presenter", icon: "🖥️" },
   { id: "analytics", label: "Analytics", icon: "📊" },
   { id: "settings", label: "Settings", icon: "⚙️" },
 ];
@@ -70,7 +71,7 @@ export default function Sidebar({
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Go Live button */}
+      {/* Go Live / Presenter button */}
       <button
         className={projectionOpen ? "btn btn-danger" : "btn btn-success"}
         style={{ width: "100%", justifyContent: "center", fontSize: 12 }}
@@ -90,25 +91,6 @@ export default function Sidebar({
         />
         {projectionOpen ? "Live — click to manage" : "Go Live"}
       </button>
-
-      {/* Live indicator */}
-      {projectionOpen && (
-        <button
-          className="nav-item active"
-          onClick={() => onChange("live")}
-          style={{
-            marginTop: 4,
-            width: "100%",
-            background: "none",
-            border: "1px solid transparent",
-            cursor: "pointer",
-            textAlign: "left",
-          }}
-        >
-          <span style={{ fontSize: 13 }}>🖥️</span>
-          <span>Operator panel</span>
-        </button>
-      )}
     </nav>
   );
 }

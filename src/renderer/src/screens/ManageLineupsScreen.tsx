@@ -3,7 +3,17 @@ import { Search, Plus, Upload, Play, Pencil, Trash2, Calendar, Clock, LayoutTemp
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+
+interface ServiceDate {
+  id: number
+  date: string
+  label: string
+  status: 'empty' | 'in-progress' | 'ready'
+  notes: string | null
+  createdAt: string
+  updatedAt: string
+}
 
 type ServiceRow = ServiceDate & { itemCount: number }
 
