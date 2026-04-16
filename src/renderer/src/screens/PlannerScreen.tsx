@@ -1,764 +1,535 @@
-import { useEffect, useState } from "react";
-import { useServiceStore } from "../store/useServiceStore";
-import { useQuickLaunch } from "../store/useQuickLaunch";
+import { useEffect, useState, useMemo } from "react"
+import {
+  Calendar, ChevronRight, Plus, Music2, CheckCircle2,
+  Circle, AlertCircle, Trash2, ArrowRight, Sparkles,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { useServiceStore } from "../store/useServiceStore"
+import { useQuickLaunch } from "../store/useQuickLaunch"
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getNextSundays(count: number): string[] {
-  const sundays: string[] = [];
-  const d = new Date();
-  const daysUntil = (7 - d.getDay()) % 7 || 7;
-  d.setDate(d.getDate() + daysUntil);
+  const sundays: string[] = []
+  const d = new Date()
+  const daysUntil = (7 - d.getDay()) % 7 || 7
+  d.setDate(d.getDate() + daysUntil)
   for (let i = 0; i < count; i++) {
-    sundays.push(d.toISOString().split("T")[0]);
-    d.setDate(d.getDate() + 7);
+    sundays.push(d.toISOString().split("T")[0])
+    d.setDate(d.getDate() + 7)
   }
-  return sundays;
+  return sundays
 }
 
 function getDaysAway(dateStr: string): number {
-  const target = new Date(dateStr + "T00:00:00");
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round(
-    (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
-  );
+  const target = new Date(dateStr + "T00:00:00")
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+    weekday: "long", month: "long", day: "numeric",
+  })
 }
 
-function formatShortDate(dateStr: string): { month: string; day: string } {
-  const d = new Date(dateStr + "T00:00:00");
-  return {
-    month: d.toLocaleDateString("en-US", { month: "short" }),
-    day: String(d.getDate()),
-  };
+function formatShort(dateStr: string): string {
+  return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
+    month: "short", day: "numeric",
+  })
 }
 
-const STATUS_CONFIG = {
-  empty: {
-    label: "Not started",
-    color: "var(--text-muted)",
-    bg: "var(--surface-3)",
-    border: "var(--border-subtle)",
-  },
-  "in-progress": {
-    label: "In prep",
-    color: "var(--accent-amber)",
-    bg: "var(--accent-amber-dim)",
-    border: "var(--accent-amber)",
-  },
-  ready: {
-    label: "Ready",
-    color: "var(--accent-green)",
-    bg: "var(--accent-green-dim)",
-    border: "var(--accent-green)",
-  },
-};
+function daysAwayLabel(d: number): string {
+  if (d < 0) return `${Math.abs(d)} day${Math.abs(d) === 1 ? "" : "s"} ago`
+  if (d === 0) return "Today"
+  if (d === 1) return "Tomorrow"
+  return `In ${d} days`
+}
+
+// ── Main Screen ──────────────────────────────────────────────────────────────
 
 interface Props {
-  onOpenBuilder: (serviceId: number) => void;
-  onGoLive: () => void;
+  onOpenBuilder: (serviceId: number) => void
+  onGoLive: () => void
 }
 
 export default function PlannerScreen({ onOpenBuilder, onGoLive }: Props) {
   const {
-    services,
-    selectedService,
-    loadServices,
-    selectService,
-    createService,
-    updateStatus,
-    deleteService,
-  } = useServiceStore();
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [initializing, setInitializing] = useState(false);
-  const { todayResult, loading: qlLoading, launch } = useQuickLaunch();
+    services, loadServices, createService, deleteService,
+  } = useServiceStore()
+  const { launch } = useQuickLaunch()
+  const [showNew, setShowNew] = useState(false)
+  const [initializing, setInitializing] = useState(false)
+  const [lineupCounts, setLineupCounts] = useState<Record<number, number>>({})
 
+  useEffect(() => { loadServices() }, [])
+
+  // Load lineup counts for all services
   useEffect(() => {
-    loadServices();
-  }, []);
+    if (services.length === 0) return
+    window.worshipsync.services.getAllWithCounts().then((rows: any[]) => {
+      const counts: Record<number, number> = {}
+      rows.forEach((r) => { counts[r.id] = r.itemCount })
+      setLineupCounts(counts)
+    }).catch(() => {})
+  }, [services])
+
+  // ── Derived: find the "next" service to prepare ─────────────────────────
+  const sortedUpcoming = useMemo(() => {
+    return [...services]
+      .filter((s) => getDaysAway(s.date) >= 0)
+      .sort((a, b) => a.date.localeCompare(b.date))
+  }, [services])
+
+  const nextService = sortedUpcoming[0] ?? null
+  const pastServices = useMemo(() =>
+    [...services]
+      .filter((s) => getDaysAway(s.date) < 0)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5),
+    [services]
+  )
 
   const handleInitSundays = async () => {
-    setInitializing(true);
-    const sundays = getNextSundays(6);
+    setInitializing(true)
+    const sundays = getNextSundays(6)
     for (const date of sundays) {
-      const exists = services.find((s) => s.date === date);
-      if (!exists) await createService(date, "Regular Sunday");
+      const exists = services.find((s) => s.date === date)
+      if (!exists) await createService(date, "Sunday Service")
     }
-    setInitializing(false);
-  };
+    setInitializing(false)
+  }
+
+  const openInBuilder = (service: any) => {
+    launch(service, (id) => onOpenBuilder(id))
+  }
+
+  const goLive = async (service: any) => {
+    await launch(service, () => {})
+    onGoLive()
+  }
+
+  if (services.length === 0) {
+    return (
+      <EmptyState onCreate={() => setShowNew(true)} onInit={handleInitSundays} initializing={initializing} />
+    )
+  }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        height: "100%",
-        flexDirection: "column",
-        overflow: "hidden",
-      }}
-    >
-      {/* ── Quick launch banner ──────────────────────────────────────────── */}
-      {!qlLoading && todayResult && (
-        <div
-          style={{
-            flexShrink: 0,
-            background:
-              todayResult.daysAway === 0
-                ? "var(--accent-green-dim)"
-                : "var(--accent-blue-dim)",
-            borderBottom: `1px solid ${todayResult.daysAway === 0 ? "var(--accent-green)" : "var(--accent-blue)"}`,
-            padding: "10px 16px",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          {/* Pulse dot */}
-          <div
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              flexShrink: 0,
-              background:
-                todayResult.daysAway === 0
-                  ? "var(--accent-green)"
-                  : "var(--accent-blue)",
-              animation: "pulse 2s infinite",
-            }}
+    <div className="h-full overflow-y-auto bg-background text-foreground">
+      <div className="max-w-5xl mx-auto px-8 py-8">
+
+        {/* ── Hero: Next service to prepare ────────────────────────────── */}
+        {nextService && (
+          <NextServiceHero
+            service={nextService}
+            itemCount={lineupCounts[nextService.id] ?? 0}
+            onPrepare={() => openInBuilder(nextService)}
+            onGoLive={() => goLive(nextService)}
           />
+        )}
 
-          {/* Message */}
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                color:
-                  todayResult.daysAway === 0
-                    ? "var(--accent-green)"
-                    : "var(--accent-blue)",
-              }}
-            >
-              {todayResult.daysAway === 0
-                ? `Today's service — ${todayResult.service.label}`
-                : `${todayResult.service.label} is in ${todayResult.daysAway} day${todayResult.daysAway > 1 ? "s" : ""}`}
+        {/* ── Upcoming services ────────────────────────────────────────── */}
+        <section className="mt-10">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+              Upcoming Services
+            </h2>
+            <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={() => setShowNew(true)}>
+              <Plus className="h-3.5 w-3.5" /> New service
+            </Button>
+          </div>
+
+          {sortedUpcoming.length <= 1 ? (
+            <div className="rounded-lg border border-dashed border-border p-6 text-center">
+              <p className="text-sm text-muted-foreground mb-3">
+                No other upcoming services scheduled.
+              </p>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={handleInitSundays} disabled={initializing}>
+                <Sparkles className="h-3.5 w-3.5" />
+                {initializing ? "Adding…" : "Add next 6 Sundays"}
+              </Button>
             </div>
-            <div
-              style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}
-            >
-              {todayResult.service.date} ·{" "}
-              {todayResult.service.status === "ready"
-                ? "Lineup ready"
-                : todayResult.service.status === "in-progress"
-                  ? "Lineup in progress"
-                  : "No lineup yet"}
-            </div>
-          </div>
-
-          {/* Action buttons */}
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <button
-              className="btn"
-              style={{ fontSize: 12 }}
-              onClick={() =>
-                launch(todayResult.service, (serviceId) =>
-                  onOpenBuilder(serviceId),
-                )
-              }
-            >
-              Open in builder
-            </button>
-
-            {todayResult.daysAway === 0 ? (
-              <button
-                className="btn btn-success"
-                style={{ fontSize: 12, fontWeight: 600 }}
-                onClick={async () => {
-                  await launch(todayResult.service, () => {});
-                  onGoLive();
-                }}
-              >
-                ▶ Go live now
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                style={{ fontSize: 12, fontWeight: 600 }}
-                onClick={() =>
-                  launch(todayResult.service, (serviceId) =>
-                    onOpenBuilder(serviceId),
-                  )
-                }
-              >
-                Prepare lineup →
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Main content: left + right columns ──────────────────────────── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left: service list */}
-        <div
-          style={{
-            width: 280,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            borderRight: "1px solid var(--border-subtle)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "10px 12px",
-              borderBottom: "1px solid var(--border-subtle)",
-              display: "flex",
-              gap: 6,
-              flexShrink: 0,
-            }}
-          >
-            <button
-              className="btn btn-primary"
-              style={{ flex: 1, justifyContent: "center", fontSize: 11 }}
-              onClick={() => setShowNewModal(true)}
-            >
-              + New service date
-            </button>
-          </div>
-
-          {services.length === 0 && (
-            <div
-              style={{
-                padding: 16,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-muted)",
-                  lineHeight: 1.6,
-                }}
-              >
-                No service dates yet. Add upcoming Sundays to get started.
-              </div>
-              <button
-                className="btn btn-success"
-                style={{ fontSize: 11 }}
-                onClick={handleInitSundays}
-                disabled={initializing}
-              >
-                {initializing ? "Creating..." : "Add next 6 Sundays"}
-              </button>
-            </div>
-          )}
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-            {services.map((service) => {
-              const daysAway = getDaysAway(service.date);
-              const { month, day } = formatShortDate(service.date);
-              const status = STATUS_CONFIG[service.status];
-              const isSelected = selectedService?.id === service.id;
-
-              return (
-                <div
-                  key={service.id}
-                  onClick={() => selectService(service)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "9px 10px",
-                    borderRadius: 8,
-                    marginBottom: 5,
-                    cursor: "pointer",
-                    border: `1px solid ${isSelected ? "rgba(77,142,240,0.3)" : "var(--border-subtle)"}`,
-                    background: isSelected
-                      ? "var(--accent-blue-dim)"
-                      : "var(--surface-1)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      minWidth: 36,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 9,
-                        color: isSelected
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.05em",
-                      }}
-                    >
-                      {month}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 20,
-                        fontWeight: 700,
-                        color: isSelected
-                          ? "var(--accent-blue)"
-                          : "var(--text-primary)",
-                        lineHeight: 1,
-                      }}
-                    >
-                      {day}
-                    </div>
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: isSelected
-                          ? "var(--accent-blue)"
-                          : "var(--text-primary)",
-                        marginBottom: 3,
-                      }}
-                    >
-                      {service.label}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: isSelected
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                      }}
-                    >
-                      {daysAway === 0
-                        ? "Today"
-                        : daysAway === 1
-                          ? "Tomorrow"
-                          : `${daysAway} days away`}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 9,
-                      padding: "2px 7px",
-                      borderRadius: 20,
-                      fontWeight: 600,
-                      background: status.bg,
-                      color: status.color,
-                      border: `1px solid ${status.border}`,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {status.label}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Right: service detail */}
-        <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-          {selectedService ? (
-            <ServiceDetail
-              service={selectedService}
-              onOpenBuilder={() => onOpenBuilder(selectedService.id)}
-              onStatusChange={updateStatus}
-              onDelete={deleteService}
-            />
           ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--text-muted)",
-                fontSize: 12,
-              }}
-            >
-              Select a service date to see details
+            <div className="space-y-1.5">
+              {sortedUpcoming.slice(1).map((service) => (
+                <ServiceRow
+                  key={service.id}
+                  service={service}
+                  itemCount={lineupCounts[service.id] ?? 0}
+                  onOpen={() => openInBuilder(service)}
+                  onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
+                />
+              ))}
             </div>
           )}
-        </div>
+        </section>
+
+        {/* ── Past services ────────────────────────────────────────────── */}
+        {pastServices.length > 0 && (
+          <section className="mt-10">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3">
+              Past Services
+            </h2>
+            <div className="space-y-1.5">
+              {pastServices.map((service) => (
+                <ServiceRow
+                  key={service.id}
+                  service={service}
+                  itemCount={lineupCounts[service.id] ?? 0}
+                  past
+                  onOpen={() => openInBuilder(service)}
+                  onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
-      {showNewModal && (
-        <NewServiceModal
-          onClose={() => setShowNewModal(false)}
-          onSaved={async (date, label) => {
-            const service = await createService(date, label);
-            await selectService(service);
-            setShowNewModal(false);
+      {showNew && (
+        <NewServiceDialog
+          onClose={() => setShowNew(false)}
+          onCreate={async (date, label) => {
+            await createService(date, label)
+            setShowNew(false)
           }}
         />
       )}
     </div>
-  );
+  )
 }
 
-function ServiceDetail({
-  service,
-  onOpenBuilder,
-  onStatusChange,
-  onDelete,
-}: {
-  service: {
-    id: number;
-    date: string;
-    label: string;
-    status: "empty" | "in-progress" | "ready";
-    notes: string | null;
-    createdAt: string;
-    updatedAt: string;
-  };
-  onOpenBuilder: () => void;
-  onStatusChange: (
-    id: number,
-    status: "empty" | "in-progress" | "ready",
-  ) => Promise<void>;
-  onDelete: (id: number) => Promise<void>;
-}) {
-  const { lineup } = useServiceStore();
-  const daysAway = getDaysAway(service.date);
+// ── Next Service Hero ────────────────────────────────────────────────────────
 
-  const readiness = [
-    { label: "Songs added to lineup", done: lineup.length > 0 },
-    { label: "At least 3 songs", done: lineup.length >= 3 },
-    {
-      label: "All songs have sections",
-      done: lineup.every(
-        (item) => JSON.parse(item.selectedSections || "[]").length > 0,
-      ),
-    },
-    { label: "Lineup marked ready", done: service.status === "ready" },
-  ];
+function NextServiceHero({
+  service, itemCount, onPrepare, onGoLive,
+}: {
+  service: any
+  itemCount: number
+  onPrepare: () => void
+  onGoLive: () => void
+}) {
+  const daysAway = getDaysAway(service.date)
+  const isToday = daysAway === 0
+  const isSoon = daysAway <= 3 && daysAway > 0
+
+  const checks = useMemo(() => [
+    { label: "Service date created", done: true },
+    { label: "Songs added to lineup", done: itemCount > 0 },
+    { label: "At least 3 songs", done: itemCount >= 3 },
+    { label: "Marked as ready", done: service.status === "ready" },
+  ], [itemCount, service.status])
+
+  const completedCount = checks.filter((c) => c.done).length
+  const progress = (completedCount / checks.length) * 100
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-        maxWidth: 680,
-      }}
-    >
+    <section className="rounded-xl border border-border bg-card overflow-hidden">
+      {/* Banner strip */}
       <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
+        className={`px-6 py-2 flex items-center gap-2 text-xs font-semibold ${
+          isToday
+            ? "bg-red-500/10 text-red-400 border-b border-red-500/20"
+            : isSoon
+              ? "bg-amber-500/10 text-amber-400 border-b border-amber-500/20"
+              : "bg-primary/5 text-primary border-b border-primary/10"
+        }`}
       >
-        <div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 700,
-              color: "var(--text-primary)",
-              marginBottom: 4,
-            }}
-          >
-            {formatDate(service.date)}
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color:
-                daysAway <= 3
-                  ? "var(--accent-amber)"
-                  : daysAway <= 7
-                    ? "var(--accent-blue)"
-                    : "var(--text-muted)",
-            }}
-          >
-            {daysAway === 0
-              ? "Today"
-              : daysAway === 1
-                ? "Tomorrow"
-                : `${daysAway} days away`}
-            {daysAway <= 7 && daysAway > 0 && " — prep window open"}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <button
-            className="btn"
-            style={{ fontSize: 11 }}
-            onClick={() => {
-              if (confirm("Delete this service date?")) onDelete(service.id);
-            }}
-          >
-            Delete
-          </button>
-          <button
-            className="btn btn-success"
-            style={{ fontSize: 11, fontWeight: 600 }}
-            onClick={onOpenBuilder}
-          >
-            Open in builder →
-          </button>
-        </div>
+        <div className={`h-1.5 w-1.5 rounded-full ${
+          isToday ? "bg-red-500 animate-pulse" : isSoon ? "bg-amber-500" : "bg-primary"
+        }`} />
+        {isToday ? "TODAY'S SERVICE" : "NEXT UP"}
+        <span className="ml-auto font-normal text-muted-foreground">
+          {daysAwayLabel(daysAway)}
+        </span>
       </div>
 
-      <div className="card">
-        <div className="label" style={{ marginBottom: 10 }}>
-          Service status
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {(["empty", "in-progress", "ready"] as const).map((s) => {
-            const cfg = STATUS_CONFIG[s];
-            const isActive = service.status === s;
-            return (
-              <button
-                key={s}
-                onClick={() => onStatusChange(service.id, s)}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  cursor: "pointer",
-                  border: `1px solid ${isActive ? cfg.border : "var(--border-subtle)"}`,
-                  background: isActive ? cfg.bg : "var(--surface-2)",
-                  color: isActive ? cfg.color : "var(--text-muted)",
-                  fontSize: 12,
-                  fontWeight: isActive ? 600 : 400,
-                  transition: "all 0.1s",
-                }}
-              >
-                {cfg.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="card">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 10,
-          }}
-        >
-          <div className="label">Songs in lineup ({lineup.length})</div>
-          <button
-            className="btn btn-primary"
-            style={{ fontSize: 11 }}
-            onClick={onOpenBuilder}
-          >
-            Edit lineup →
-          </button>
-        </div>
-        {lineup.length === 0 ? (
-          <div
-            style={{
-              fontSize: 12,
-              color: "var(--text-muted)",
-              padding: "8px 0",
-            }}
-          >
-            No songs added yet — open the builder to add songs
+      <div className="p-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-bold text-foreground truncate">
+              {service.label}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5" />
+              {formatDate(service.date)}
+            </p>
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {lineup.map((item, i) => {
-              const selectedIds: number[] = JSON.parse(
-                item.selectedSections || "[]",
-              );
-              return (
-                <div
-                  key={item.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 10px",
-                    borderRadius: 7,
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 5,
-                      flexShrink: 0,
-                      background: ["#1a1a4e", "#1e3a1a", "#3d1010", "#2a1a00"][
-                        i % 4
-                      ],
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "rgba(255,255,255,0.5)",
-                    }}
-                  >
-                    {i + 1}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600 }}>
-                      {item.song.title}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: "var(--text-muted)",
-                        marginTop: 1,
-                      }}
-                    >
-                      {item.song.artist}
-                      {item.song.key && ` · Key of ${item.song.key}`}
-                      {` · ${selectedIds.length} sections`}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
-      <div className="card">
-        <div className="label" style={{ marginBottom: 10 }}>
-          Readiness checklist
+          <div className="flex items-center gap-2 shrink-0">
+            {isToday ? (
+              <>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={onPrepare}>
+                  Review lineup
+                </Button>
+                <Button size="sm" className="gap-1.5 bg-red-600 hover:bg-red-700 text-white" onClick={onGoLive}>
+                  <Sparkles className="h-3.5 w-3.5" /> Go Live
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" className="gap-1.5" onClick={onPrepare}>
+                Prepare lineup <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          {readiness.map((item) => (
+
+        {/* Progress + checklist */}
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              Readiness
+            </span>
+            <span className="text-xs font-mono text-muted-foreground">
+              {completedCount} / {checks.length}
+            </span>
+          </div>
+          <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-4">
             <div
-              key={item.label}
-              style={{ display: "flex", alignItems: "center", gap: 9 }}
-            >
-              <div
-                style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 4,
-                  flexShrink: 0,
-                  background: item.done
-                    ? "var(--accent-green-dim)"
-                    : "var(--surface-3)",
-                  border: `1px solid ${item.done ? "var(--accent-green)" : "var(--border-default)"}`,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 10,
-                  color: "var(--accent-green)",
-                }}
-              >
-                {item.done ? "✓" : ""}
+              className={`h-full transition-all ${
+                progress === 100 ? "bg-green-500" : progress >= 50 ? "bg-amber-500" : "bg-primary"
+              }`}
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            {checks.map((check) => (
+              <div key={check.label} className="flex items-center gap-2">
+                {check.done ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                ) : (
+                  <Circle className="h-4 w-4 text-muted-foreground shrink-0" />
+                )}
+                <span className={`text-xs ${check.done ? "text-foreground" : "text-muted-foreground"}`}>
+                  {check.label}
+                </span>
               </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: item.done
-                    ? "var(--text-primary)"
-                    : "var(--text-muted)",
-                }}
-              >
-                {item.label}
+            ))}
+          </div>
+        </div>
+
+        {/* Quick stat */}
+        <div className="mt-5 pt-5 border-t border-border flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            <Music2 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-foreground">
+              <span className="font-semibold">{itemCount}</span>{" "}
+              <span className="text-muted-foreground">
+                {itemCount === 1 ? "song" : "songs"} in lineup
               </span>
-            </div>
-          ))}
+            </span>
+          </div>
+          {itemCount === 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-amber-400">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Lineup is empty — click "Prepare lineup" to add songs
+            </span>
+          )}
         </div>
       </div>
-    </div>
-  );
+    </section>
+  )
 }
 
-function NewServiceModal({
-  onClose,
-  onSaved,
-}: {
-  onClose: () => void;
-  onSaved: (date: string, label: string) => Promise<void>;
-}) {
-  const [date, setDate] = useState("");
-  const [label, setLabel] = useState("Regular Sunday");
-  const [saving, setSaving] = useState(false);
+// ── Service Row ──────────────────────────────────────────────────────────────
 
-  const handleSave = async () => {
-    if (!date) return;
-    setSaving(true);
-    await onSaved(date, label);
-    setSaving(false);
-  };
+function ServiceRow({
+  service, itemCount, past, onOpen, onDelete,
+}: {
+  service: any
+  itemCount: number
+  past?: boolean
+  onOpen: () => void
+  onDelete: () => void
+}) {
+  const daysAway = getDaysAway(service.date)
 
   return (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.75)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
+      className="group flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent/30 transition-colors cursor-pointer"
+      onClick={onOpen}
     >
-      <div
-        style={{
-          background: "var(--surface-1)",
-          border: "1px solid var(--border-default)",
-          borderRadius: 14,
-          width: 380,
-          padding: 24,
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
-      >
-        <div style={{ fontSize: 14, fontWeight: 600 }}>New service date</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Date *</label>
-          <input
-            className="input"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            autoFocus
-          />
+      {/* Date chip */}
+      <div className="h-11 w-11 shrink-0 rounded-md bg-muted flex flex-col items-center justify-center text-center">
+        <span className="text-[9px] uppercase font-bold text-muted-foreground leading-none">
+          {new Date(service.date + "T00:00:00").toLocaleDateString("en-US", { month: "short" })}
+        </span>
+        <span className="text-base font-bold text-foreground leading-none mt-0.5">
+          {new Date(service.date + "T00:00:00").getDate()}
+        </span>
+      </div>
+
+      {/* Main */}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground truncate">{service.label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {past ? formatShort(service.date) : daysAwayLabel(daysAway)}
+          {" · "}
+          {itemCount} {itemCount === 1 ? "song" : "songs"}
+        </p>
+      </div>
+
+      {/* Status pill */}
+      <StatusPill status={service.status} past={past} />
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost" size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+          title="Delete"
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+    </div>
+  )
+}
+
+function StatusPill({ status, past }: { status: string; past?: boolean }) {
+  if (past) {
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+        Past
+      </span>
+    )
+  }
+  if (status === "ready") {
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-green-500/15 text-green-500">
+        Ready
+      </span>
+    )
+  }
+  if (status === "in-progress") {
+    return (
+      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
+        In prep
+      </span>
+    )
+  }
+  return (
+    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+      Draft
+    </span>
+  )
+}
+
+// ── Empty State ──────────────────────────────────────────────────────────────
+
+function EmptyState({
+  onCreate, onInit, initializing,
+}: {
+  onCreate: () => void
+  onInit: () => void
+  initializing: boolean
+}) {
+  return (
+    <div className="h-full flex items-center justify-center bg-background text-foreground">
+      <div className="text-center max-w-md px-6">
+        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+          <Calendar className="h-8 w-8 text-primary" />
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Label</label>
-          <input
-            className="input"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Easter Sunday, Regular Sunday"
-          />
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !date}
-          >
-            {saving ? "Saving..." : "Create"}
-          </button>
+        <h1 className="text-xl font-bold mb-2">Welcome to WorshipSync</h1>
+        <p className="text-sm text-muted-foreground mb-6">
+          Plan your service lineups and present them live. Start by adding your
+          upcoming service dates.
+        </p>
+        <div className="flex gap-2 justify-center">
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+            <Plus className="h-3.5 w-3.5" /> New service
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={onInit} disabled={initializing}>
+            <Sparkles className="h-3.5 w-3.5" />
+            {initializing ? "Creating…" : "Add next 6 Sundays"}
+          </Button>
         </div>
       </div>
     </div>
-  );
+  )
+}
+
+// ── New Service Dialog ───────────────────────────────────────────────────────
+
+function NewServiceDialog({
+  onClose, onCreate,
+}: {
+  onClose: () => void
+  onCreate: (date: string, label: string) => Promise<void>
+}) {
+  const [date, setDate] = useState("")
+  const [label, setLabel] = useState("Sunday Service")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  const save = async () => {
+    if (!date) { setError("Please pick a date"); return }
+    setSaving(true)
+    try {
+      await onCreate(date, label.trim() || "Sunday Service")
+    } catch (e: any) {
+      setError(e?.message?.includes("UNIQUE") ? "A service already exists for this date." : "Failed to create service.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent hideClose className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl" style={{ width: 420, maxWidth: "95vw" }}>
+        <div className="flex flex-col bg-background text-foreground">
+          <div className="px-6 pt-5 pb-1">
+            <DialogTitle className="text-lg font-bold">New service date</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Create a new service to start building its lineup.
+            </p>
+          </div>
+
+          <div className="px-6 py-5 flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Service name</label>
+              <Input
+                autoFocus
+                placeholder="e.g. Sunday Service"
+                value={label}
+                onChange={(e) => { setLabel(e.target.value); setError("") }}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Date</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="date"
+                  className="pl-9"
+                  value={date}
+                  onChange={(e) => { setDate(e.target.value); setError("") }}
+                />
+              </div>
+            </div>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={!date || saving} onClick={save} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {saving ? "Creating…" : "Create"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
 }

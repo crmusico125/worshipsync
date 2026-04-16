@@ -5,7 +5,6 @@ export type AppScreen =
   | "themes"
   | "analytics"
   | "settings"
-  | "lineups"
   | "presenter"
 
 export interface Song {
