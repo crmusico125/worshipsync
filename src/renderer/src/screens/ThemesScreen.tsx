@@ -1,28 +1,36 @@
-import { useEffect, useState } from "react";
-import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
+import { useEffect, useState } from "react"
+import {
+  Plus, Palette, Star, Trash2, Save, Type, AlignLeft, AlignCenter,
+  AlignRight, Image as ImageIcon, Layers, Eye,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import BackgroundPickerPanel from "../components/BackgroundPickerPanel"
 
 interface ThemeSettings {
-  fontFamily: string;
-  fontSize: number;
-  fontWeight: string;
-  textColor: string;
-  textAlign: "left" | "center" | "right";
-  textPosition: "top" | "middle" | "bottom";
-  overlayOpacity: number;
-  textShadowOpacity: number;
-  maxLinesPerSlide: number;
-  backgroundPath: string | null;
+  fontFamily: string
+  fontSize: number
+  fontWeight: string
+  textColor: string
+  textAlign: "left" | "center" | "right"
+  textPosition: "top" | "middle" | "bottom"
+  overlayOpacity: number
+  textShadowOpacity: number
+  maxLinesPerSlide: number
+  backgroundPath: string | null
 }
 
 interface Theme {
-  id: number;
-  name: string;
-  type: "global" | "seasonal" | "per-song";
-  isDefault: boolean;
-  seasonStart: string | null;
-  seasonEnd: string | null;
-  settings: string;
-  createdAt: string;
+  id: number
+  name: string
+  type: "global" | "seasonal" | "per-song"
+  isDefault: boolean
+  seasonStart: string | null
+  seasonEnd: string | null
+  settings: string
+  createdAt: string
 }
 
 const DEFAULT_SETTINGS: ThemeSettings = {
@@ -36,16 +44,17 @@ const DEFAULT_SETTINGS: ThemeSettings = {
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
   backgroundPath: null,
-};
+}
 
 const FONT_OPTIONS = [
   "Montserrat, sans-serif",
+  "Inter, sans-serif",
   "Georgia, serif",
   "Arial, sans-serif",
   "Times New Roman, serif",
   "Trebuchet MS, sans-serif",
   "Palatino, serif",
-];
+]
 
 const TEXT_COLORS = [
   { hex: "#ffffff", label: "White" },
@@ -54,649 +63,381 @@ const TEXT_COLORS = [
   { hex: "#60a5fa", label: "Blue" },
   { hex: "#f472b6", label: "Pink" },
   { hex: "#4ade80", label: "Green" },
-];
+]
 
-const TYPE_BADGE: Record<string, { label: string; color: string; bg: string }> =
-  {
-    global: {
-      label: "Global",
-      color: "var(--accent-blue)",
-      bg: "var(--accent-blue-dim)",
-    },
-    seasonal: {
-      label: "Seasonal",
-      color: "var(--accent-green)",
-      bg: "var(--accent-green-dim)",
-    },
-    "per-song": {
-      label: "Per-song",
-      color: "var(--accent-amber)",
-      bg: "var(--accent-amber-dim)",
-    },
-  };
+const TYPE_BADGES: Record<string, { label: string; className: string }> = {
+  global:     { label: "Global",   className: "bg-primary/15 text-primary" },
+  seasonal:   { label: "Seasonal", className: "bg-green-500/15 text-green-500" },
+  "per-song": { label: "Per-song", className: "bg-amber-500/15 text-amber-500" },
+}
 
 export default function ThemesScreen() {
-  const [themeList, setThemeList] = useState<Theme[]>([]);
-  const [selectedTheme, setSelectedTheme] = useState<Theme | null>(null);
-  const [settings, setSettings] = useState<ThemeSettings>(DEFAULT_SETTINGS);
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [previewLyric] = useState("You are the way maker\nMiracle worker");
+  const [themeList, setThemeList] = useState<Theme[]>([])
+  const [selectedTheme, setSelectedTheme] = useState<Theme | null>(null)
+  const [settings, setSettings] = useState<ThemeSettings>(DEFAULT_SETTINGS)
+  const [name, setName] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [showNewModal, setShowNewModal] = useState(false)
+  const [previewLyric] = useState("You are the way maker\nMiracle worker")
 
-  useEffect(() => {
-    loadThemes();
-  }, []);
+  useEffect(() => { loadThemes() }, [])
 
   const loadThemes = async () => {
-    const list = (await window.worshipsync.themes.getAll()) as Theme[];
-    setThemeList(list);
+    const list = (await window.worshipsync.themes.getAll()) as Theme[]
+    setThemeList(list)
     if (!selectedTheme && list.length > 0) {
-      selectTheme(list.find((t) => t.isDefault) ?? list[0]);
+      selectTheme(list.find((t) => t.isDefault) ?? list[0])
     }
-  };
+  }
 
   const selectTheme = (theme: Theme) => {
-    setSelectedTheme(theme);
-    setName(theme.name);
-    try {
-      setSettings(JSON.parse(theme.settings));
-    } catch {
-      setSettings(DEFAULT_SETTINGS);
-    }
-  };
+    setSelectedTheme(theme)
+    setName(theme.name)
+    try { setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(theme.settings) }) }
+    catch { setSettings(DEFAULT_SETTINGS) }
+  }
 
   const handleSetDefault = async () => {
-    if (!selectedTheme) return;
-    // Clear all existing defaults first
+    if (!selectedTheme) return
     for (const t of themeList) {
       if (t.isDefault) {
-        await window.worshipsync.themes.update(t.id, { isDefault: false });
+        await window.worshipsync.themes.update(t.id, { isDefault: false })
       }
     }
-    await window.worshipsync.themes.update(selectedTheme.id, {
-      isDefault: true,
-    });
-    await loadThemes();
-  };
+    await window.worshipsync.themes.update(selectedTheme.id, { isDefault: true })
+    await loadThemes()
+  }
 
   const handleSave = async () => {
-    if (!selectedTheme) return;
-    setSaving(true);
+    if (!selectedTheme) return
+    setSaving(true)
     await window.worshipsync.themes.update(selectedTheme.id, {
       name,
       settings: JSON.stringify(settings),
-    });
-    await loadThemes();
-    setSaving(false);
-  };
+    })
+    await loadThemes()
+    setSaving(false)
+  }
 
   const handleDelete = async (theme: Theme) => {
-    if (theme.isDefault) return;
-    if (!confirm(`Delete theme "${theme.name}"?`)) return;
-    await window.worshipsync.themes.delete(theme.id);
-    setSelectedTheme(null);
-    await loadThemes();
-  };
+    if (theme.isDefault) return
+    if (!confirm(`Delete theme "${theme.name}"?`)) return
+    await window.worshipsync.themes.delete(theme.id)
+    setSelectedTheme(null)
+    await loadThemes()
+  }
 
-  const updateSetting = <K extends keyof ThemeSettings>(
-    key: K,
-    value: ThemeSettings[K],
-  ) => {
-    setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const overlayAlpha = ((settings.overlayOpacity ?? 45) / 100).toFixed(2);
+  const updateSetting = <K extends keyof ThemeSettings>(key: K, value: ThemeSettings[K]) => {
+    setSettings((prev) => ({ ...prev, [key]: value }))
+  }
 
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-      {/* ── Left: theme list ─────────────────────────────────────────────── */}
-      <div
-        style={{
-          width: 220,
-          flexShrink: 0,
-          display: "flex",
-          flexDirection: "column",
-          borderRight: "1px solid var(--border-subtle)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "10px 12px",
-            borderBottom: "1px solid var(--border-subtle)",
-            flexShrink: 0,
-          }}
-        >
-          <button
-            className="btn btn-primary"
-            style={{ width: "100%", justifyContent: "center", fontSize: 11 }}
+    <div className="h-full flex overflow-hidden bg-background text-foreground">
+
+      {/* ── Left: theme list ────────────────────────────────────────── */}
+      <aside className="w-60 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden">
+        <div className="px-3 py-3 border-b border-border shrink-0">
+          <Button
+            size="sm"
+            className="w-full gap-1.5"
             onClick={() => setShowNewModal(true)}
           >
-            + New theme
-          </button>
+            <Plus className="h-3.5 w-3.5" /> New theme
+          </Button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
-          {/* Priority note */}
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--text-muted)",
-              lineHeight: 1.6,
-              padding: "6px 8px",
-              marginBottom: 8,
-              background: "var(--surface-2)",
-              borderRadius: 6,
-              borderLeft: "2px solid var(--accent-blue)",
-            }}
-          >
-            Priority: per-song {">"} seasonal {">"} global
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          <div className="text-[10px] text-muted-foreground leading-relaxed px-2.5 py-2 mb-1.5 rounded-md bg-muted/40 border-l-2 border-primary">
+            Priority: <span className="text-foreground font-medium">per-song</span> &gt; seasonal &gt; global
           </div>
 
           {themeList.map((theme) => {
-            const badge = TYPE_BADGE[theme.type];
-            const isSelected = selectedTheme?.id === theme.id;
+            const badge = TYPE_BADGES[theme.type]
+            const isSelected = selectedTheme?.id === theme.id
             return (
-              <div
+              <button
                 key={theme.id}
                 onClick={() => selectTheme(theme)}
-                style={{
-                  padding: "9px 10px",
-                  borderRadius: 8,
-                  marginBottom: 5,
-                  cursor: "pointer",
-                  border: `1px solid ${isSelected ? "rgba(77,142,240,0.3)" : "var(--border-subtle)"}`,
-                  background: isSelected
-                    ? "var(--accent-blue-dim)"
-                    : "var(--surface-1)",
-                }}
+                className={`w-full text-left px-2.5 py-2 rounded-md mb-1 border transition-colors ${
+                  isSelected
+                    ? "bg-primary/10 border-primary/30"
+                    : "border-transparent hover:bg-accent/50"
+                }`}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    marginBottom: 4,
-                  }}
-                >
-                  <div
-                    style={{
-                      flex: 1,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      color: isSelected
-                        ? "var(--accent-blue)"
-                        : "var(--text-primary)",
-                    }}
-                  >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-semibold truncate flex-1 ${
+                    isSelected ? "text-primary" : "text-foreground"
+                  }`}>
                     {theme.name}
-                  </div>
+                  </span>
                   {theme.isDefault && (
-                    <div
-                      style={{
-                        fontSize: 8,
-                        padding: "1px 5px",
-                        borderRadius: 10,
-                        background: "var(--accent-green-dim)",
-                        color: "var(--accent-green)",
-                        border: "1px solid var(--accent-green)",
-                        fontWeight: 600,
-                      }}
-                    >
-                      DEFAULT
-                    </div>
+                    <Star className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
                   )}
                 </div>
-                <div
-                  style={{
-                    fontSize: 9,
-                    padding: "1px 6px",
-                    borderRadius: 10,
-                    display: "inline-block",
-                    background: badge.bg,
-                    color: badge.color,
-                    fontWeight: 600,
-                  }}
-                >
-                  {badge.label}
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${badge.className}`}>
+                    {badge.label}
+                  </span>
+                  {theme.seasonStart && (
+                    <span className="text-[9px] text-muted-foreground">
+                      {theme.seasonStart} – {theme.seasonEnd}
+                    </span>
+                  )}
                 </div>
-                {theme.seasonStart && (
-                  <div
-                    style={{
-                      fontSize: 9,
-                      color: "var(--text-muted)",
-                      marginTop: 3,
-                    }}
-                  >
-                    {theme.seasonStart} – {theme.seasonEnd}
-                  </div>
-                )}
-              </div>
-            );
+              </button>
+            )
           })}
         </div>
-      </div>
+      </aside>
 
-      {/* ── Center: editor ───────────────────────────────────────────────── */}
+      {/* ── Center: editor ──────────────────────────────────────────── */}
       {selectedTheme ? (
-        <div
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-          }}
-        >
-          {/* Name + save */}
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <input
-              className="input"
-              style={{ flex: 1, fontSize: 14, fontWeight: 600 }}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Top bar */}
+          <div className="px-6 py-3 border-b border-border shrink-0 flex items-center gap-3">
+            <Palette className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
+              className="max-w-xs font-semibold"
+              placeholder="Theme name"
             />
-            {!selectedTheme?.isDefault && (
-              <button
-                className="btn"
-                style={{ fontSize: 11 }}
-                onClick={handleSetDefault}
-              >
-                Set as default
-              </button>
-            )}
-            <button
-              className="btn btn-success"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              {saving ? "Saving..." : "Save theme"}
-            </button>
-            {!selectedTheme?.isDefault && (
-              <button
-                className="btn"
-                style={{ color: "var(--accent-red)", fontSize: 11 }}
-                onClick={() => handleDelete(selectedTheme!)}
-              >
-                Delete
-              </button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+              {!selectedTheme.isDefault && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleSetDefault}
+                >
+                  <Star className="h-3.5 w-3.5" /> Set as default
+                </Button>
+              )}
+              {!selectedTheme.isDefault && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive gap-1.5"
+                  onClick={() => handleDelete(selectedTheme)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+              <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={saving}>
+                <Save className="h-3.5 w-3.5" />
+                {saving ? "Saving…" : "Save theme"}
+              </Button>
+            </div>
           </div>
 
-          <div
-            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-          >
-            {/* Font family */}
-            <div
-              className="card"
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <div className="label">Font family</div>
-              <select
-                className="input"
-                value={settings.fontFamily}
-                onChange={(e) => updateSetting("fontFamily", e.target.value)}
-                style={{ appearance: "none" }}
-              >
-                {FONT_OPTIONS.map((f) => (
-                  <option key={f} value={f}>
-                    {f.split(",")[0]}
-                  </option>
-                ))}
-              </select>
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-w-5xl">
 
-              <div className="label">Font size</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="range"
-                  min={24}
-                  max={96}
-                  step={2}
-                  value={settings.fontSize}
-                  onChange={(e) =>
-                    updateSetting("fontSize", parseInt(e.target.value))
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 32 }}>
-                  {settings.fontSize}px
-                </span>
-              </div>
-
-              <div className="label">Font weight</div>
-              <div style={{ display: "flex", gap: 5 }}>
-                {["400", "500", "600", "700"].map((w) => (
-                  <button
-                    key={w}
-                    onClick={() => updateSetting("fontWeight", w)}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      border: `1px solid ${settings.fontWeight === w ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                      background:
-                        settings.fontWeight === w
-                          ? "var(--accent-blue-dim)"
-                          : "var(--surface-2)",
-                      color:
-                        settings.fontWeight === w
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                      fontSize: 11,
-                      fontWeight: parseInt(w),
-                    }}
+              {/* Font */}
+              <Card icon={Type} title="Font">
+                <Field label="Font family">
+                  <Select
+                    value={settings.fontFamily}
+                    onChange={(e) => updateSetting("fontFamily", e.target.value)}
                   >
-                    {w === "400"
-                      ? "Regular"
-                      : w === "500"
-                        ? "Medium"
-                        : w === "600"
-                          ? "Semi"
-                          : "Bold"}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    {FONT_OPTIONS.map((f) => (
+                      <option key={f} value={f}>{f.split(",")[0]}</option>
+                    ))}
+                  </Select>
+                </Field>
 
-            {/* Text color + alignment */}
-            <div
-              className="card"
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <div className="label">Text color</div>
-              <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                {TEXT_COLORS.map((c) => (
-                  <div
-                    key={c.hex}
-                    onClick={() => updateSetting("textColor", c.hex)}
-                    title={c.label}
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      background: c.hex,
-                      cursor: "pointer",
-                      border: `1px solid ${c.hex === "#ffffff" ? "#666" : c.hex}`,
-                      outline:
-                        settings.textColor === c.hex
-                          ? "2px solid var(--accent-blue)"
-                          : "none",
-                      outlineOffset: 2,
-                    }}
+                <Field label={`Font size · ${settings.fontSize}px`}>
+                  <input
+                    type="range"
+                    min={24} max={96} step={2}
+                    value={settings.fontSize}
+                    onChange={(e) => updateSetting("fontSize", parseInt(e.target.value))}
+                    className="w-full accent-primary"
                   />
-                ))}
-                <input
-                  type="color"
-                  value={settings.textColor}
-                  onChange={(e) => updateSetting("textColor", e.target.value)}
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: 0,
-                    background: "none",
-                  }}
-                  title="Custom color"
-                />
-              </div>
+                </Field>
 
-              <div className="label">Text alignment</div>
-              <div style={{ display: "flex", gap: 5 }}>
-                {(["left", "center", "right"] as const).map((a) => (
-                  <button
-                    key={a}
-                    onClick={() => updateSetting("textAlign", a)}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      fontSize: 11,
-                      border: `1px solid ${settings.textAlign === a ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                      background:
-                        settings.textAlign === a
-                          ? "var(--accent-blue-dim)"
-                          : "var(--surface-2)",
-                      color:
-                        settings.textAlign === a
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                    }}
-                  >
-                    {a.charAt(0).toUpperCase() + a.slice(1)}
-                  </button>
-                ))}
-              </div>
+                <Field label="Font weight">
+                  <SegmentedControl
+                    value={settings.fontWeight}
+                    onChange={(v) => updateSetting("fontWeight", v)}
+                    options={[
+                      { value: "400", label: "Regular" },
+                      { value: "500", label: "Medium" },
+                      { value: "600", label: "Semi" },
+                      { value: "700", label: "Bold" },
+                    ]}
+                  />
+                </Field>
+              </Card>
 
-              <div className="label">Text position</div>
-              <div style={{ display: "flex", gap: 5 }}>
-                {(["top", "middle", "bottom"] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => updateSetting("textPosition", p)}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      fontSize: 11,
-                      border: `1px solid ${settings.textPosition === p ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                      background:
-                        settings.textPosition === p
-                          ? "var(--accent-blue-dim)"
-                          : "var(--surface-2)",
-                      color:
-                        settings.textPosition === p
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                    }}
-                  >
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </button>
-                ))}
-              </div>
-            </div>
+              {/* Color & alignment */}
+              <Card icon={Palette} title="Color & alignment">
+                <Field label="Text color">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {TEXT_COLORS.map((c) => (
+                      <button
+                        key={c.hex}
+                        onClick={() => updateSetting("textColor", c.hex)}
+                        title={c.label}
+                        className={`h-7 w-7 rounded-full border transition-transform hover:scale-110 ${
+                          settings.textColor === c.hex
+                            ? "ring-2 ring-primary ring-offset-2 ring-offset-card border-transparent"
+                            : "border-border"
+                        }`}
+                        style={{ background: c.hex }}
+                      />
+                    ))}
+                    <label
+                      className="h-7 w-7 rounded-full border border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary"
+                      title="Custom color"
+                    >
+                      <input
+                        type="color"
+                        value={settings.textColor}
+                        onChange={(e) => updateSetting("textColor", e.target.value)}
+                        className="opacity-0 w-0 h-0"
+                      />
+                      <Plus className="h-3 w-3 text-muted-foreground" />
+                    </label>
+                  </div>
+                </Field>
 
-            {/* Overlay + shadow */}
-            <div
-              className="card"
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <div className="label">Background overlay opacity</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={settings.overlayOpacity}
-                  onChange={(e) =>
-                    updateSetting("overlayOpacity", parseInt(e.target.value))
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 36 }}>
-                  {settings.overlayOpacity}%
-                </span>
-              </div>
+                <Field label="Text alignment">
+                  <SegmentedControl
+                    value={settings.textAlign}
+                    onChange={(v) => updateSetting("textAlign", v as ThemeSettings["textAlign"])}
+                    options={[
+                      { value: "left",   label: "", icon: AlignLeft },
+                      { value: "center", label: "", icon: AlignCenter },
+                      { value: "right",  label: "", icon: AlignRight },
+                    ]}
+                  />
+                </Field>
 
-              <div className="label">Text shadow opacity</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={settings.textShadowOpacity}
-                  onChange={(e) =>
-                    updateSetting("textShadowOpacity", parseInt(e.target.value))
-                  }
-                  style={{ flex: 1 }}
-                />
-                <span style={{ fontSize: 12, fontWeight: 600, minWidth: 36 }}>
-                  {settings.textShadowOpacity}%
-                </span>
-              </div>
+                <Field label="Text position">
+                  <SegmentedControl
+                    value={settings.textPosition}
+                    onChange={(v) => updateSetting("textPosition", v as ThemeSettings["textPosition"])}
+                    options={[
+                      { value: "top",    label: "Top" },
+                      { value: "middle", label: "Middle" },
+                      { value: "bottom", label: "Bottom" },
+                    ]}
+                  />
+                </Field>
+              </Card>
 
-              <div className="label">Max lines per slide</div>
-              <div style={{ display: "flex", gap: 5 }}>
-                {[1, 2, 3, 4].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => updateSetting("maxLinesPerSlide", n)}
-                    style={{
-                      flex: 1,
-                      padding: "5px 0",
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      border: `1px solid ${settings.maxLinesPerSlide === n ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                      background:
-                        settings.maxLinesPerSlide === n
-                          ? "var(--accent-blue-dim)"
-                          : "var(--surface-2)",
-                      color:
-                        settings.maxLinesPerSlide === n
-                          ? "var(--accent-blue)"
-                          : "var(--text-muted)",
-                      fontWeight: settings.maxLinesPerSlide === n ? 600 : 400,
-                    }}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
+              {/* Layout */}
+              <Card icon={Layers} title="Layout">
+                <Field label={`Background overlay · ${settings.overlayOpacity}%`}>
+                  <input
+                    type="range"
+                    min={0} max={100} step={5}
+                    value={settings.overlayOpacity}
+                    onChange={(e) => updateSetting("overlayOpacity", parseInt(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </Field>
 
-            {/* Live preview */}
-            <div
-              className="card"
-              style={{ display: "flex", flexDirection: "column", gap: 8 }}
-            >
-              <div className="label">Live preview</div>
-              <div
-                style={{
-                  background: "#07070f",
-                  borderRadius: 8,
-                  aspectRatio: "16/9",
-                  display: "flex",
-                  alignItems:
-                    settings.textPosition === "top"
-                      ? "flex-start"
-                      : settings.textPosition === "bottom"
-                        ? "flex-end"
-                        : "center",
-                  justifyContent: "center",
-                  padding: "10% 8%",
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                {/* Background layer */}
-                {settings.backgroundPath &&
-                  (() => {
-                    const bg = settings.backgroundPath!;
-                    if (bg.startsWith("color:")) {
-                      return (
-                        <div
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            background: bg.replace("color:", ""),
-                          }}
-                        />
-                      );
-                    }
-                    return (
+                <Field label={`Text shadow · ${settings.textShadowOpacity}%`}>
+                  <input
+                    type="range"
+                    min={0} max={100} step={5}
+                    value={settings.textShadowOpacity}
+                    onChange={(e) => updateSetting("textShadowOpacity", parseInt(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </Field>
+
+                <Field label="Max lines per slide">
+                  <SegmentedControl
+                    value={String(settings.maxLinesPerSlide)}
+                    onChange={(v) => updateSetting("maxLinesPerSlide", parseInt(v))}
+                    options={[
+                      { value: "1", label: "1" },
+                      { value: "2", label: "2" },
+                      { value: "3", label: "3" },
+                      { value: "4", label: "4" },
+                    ]}
+                  />
+                </Field>
+              </Card>
+
+              {/* Live preview */}
+              <Card icon={Eye} title="Live preview">
+                <div
+                  className="rounded-md overflow-hidden bg-gray-950 relative"
+                  style={{ aspectRatio: "16/9" }}
+                >
+                  {settings.backgroundPath && (
+                    settings.backgroundPath.startsWith("color:") ? (
                       <div
+                        className="absolute inset-0"
+                        style={{ background: settings.backgroundPath.replace("color:", "") }}
+                      />
+                    ) : (
+                      <div
+                        className="absolute inset-0 bg-cover bg-center"
                         style={{
-                          position: "absolute",
-                          inset: 0,
-                          backgroundImage: `url("file://${encodeURI(bg)}")`,
-                          backgroundSize: "cover",
-                          backgroundPosition: "center",
+                          backgroundImage: `url("file://${encodeURI(settings.backgroundPath)}")`,
                         }}
                       />
-                    );
-                  })()}
-                {/* Overlay */}
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: `rgba(0,0,0,${overlayAlpha})`,
-                  }}
-                />
-                {/* Lyrics */}
-                <div
-                  style={{
-                    position: "relative",
-                    zIndex: 1,
-                    fontFamily: settings.fontFamily,
-                    fontSize: Math.round(settings.fontSize * 0.25),
-                    fontWeight: settings.fontWeight,
-                    color: settings.textColor,
-                    textAlign: settings.textAlign,
-                    lineHeight: 1.5,
-                    textShadow: `0 1px 4px rgba(0,0,0,${(settings.textShadowOpacity / 100).toFixed(2)})`,
-                  }}
-                >
-                  {previewLyric
-                    .split("\n")
-                    .slice(0, settings.maxLinesPerSlide)
-                    .map((line, i) => (
-                      <div key={i}>{line}</div>
-                    ))}
+                    )
+                  )}
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: `rgba(0,0,0,${settings.overlayOpacity / 100})` }}
+                  />
+                  <div className={`relative h-full flex p-6 ${
+                    settings.textPosition === "top" ? "items-start"
+                    : settings.textPosition === "bottom" ? "items-end"
+                    : "items-center"
+                  } ${
+                    settings.textAlign === "left" ? "justify-start"
+                    : settings.textAlign === "right" ? "justify-end"
+                    : "justify-center"
+                  }`}>
+                    <div
+                      style={{
+                        fontFamily: settings.fontFamily,
+                        fontSize: Math.round(settings.fontSize * 0.28),
+                        fontWeight: settings.fontWeight,
+                        color: settings.textColor,
+                        textAlign: settings.textAlign,
+                        lineHeight: 1.5,
+                        textShadow: `0 1px 4px rgba(0,0,0,${(settings.textShadowOpacity / 100).toFixed(2)})`,
+                      }}
+                    >
+                      {previewLyric.split("\n").slice(0, settings.maxLinesPerSlide).map((line, i) => (
+                        <div key={i}>{line}</div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                  textAlign: "center",
-                }}
-              >
-                Preview — actual size on projector
-              </div>
-            </div>
+                <p className="text-[10px] text-muted-foreground text-center mt-2">
+                  Preview — actual size on projector
+                </p>
+              </Card>
 
-            {/* Background */}
-            <div
-              className="card"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                gridColumn: "1 / -1", // ← spans full width
-              }}
-            >
-              <div className="label">Background</div>
-              <div style={{ maxWidth: 360 }}>
-                <BackgroundPickerPanel
-                  currentBackground={settings.backgroundPath ?? null}
-                  previewLabel="Way Maker · Chorus"
-                  onSelect={(bg) => updateSetting("backgroundPath", bg as any)}
-                />
+              {/* Background — spans full width */}
+              <div className="xl:col-span-2">
+                <Card icon={ImageIcon} title="Background">
+                  <BackgroundPickerPanel
+                    currentBackground={settings.backgroundPath ?? null}
+                    previewLabel="Way Maker · Chorus"
+                    onSelect={(bg) => updateSetting("backgroundPath", bg)}
+                  />
+                </Card>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Select a theme to edit
+        <div className="flex-1 flex items-center justify-center text-center">
+          <div>
+            <Palette className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm text-muted-foreground">Select a theme to edit</p>
           </div>
         </div>
       )}
@@ -705,33 +446,96 @@ export default function ThemesScreen() {
         <NewThemeModal
           onClose={() => setShowNewModal(false)}
           onSaved={async () => {
-            await loadThemes();
-            setShowNewModal(false);
+            await loadThemes()
+            setShowNewModal(false)
           }}
         />
       )}
     </div>
-  );
+  )
 }
 
-function NewThemeModal({
-  onClose,
-  onSaved,
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function Card({
+  icon: Icon, title, children,
 }: {
-  onClose: () => void;
-  onSaved: () => void;
+  icon: typeof Type
+  title: string
+  children: React.ReactNode
 }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<"global" | "seasonal" | "per-song">(
-    "global",
-  );
-  const [seasonStart, setSeasonStart] = useState("");
-  const [seasonEnd, setSeasonEnd] = useState("");
-  const [saving, setSaving] = useState(false);
+  return (
+    <section className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          {title}
+        </span>
+      </div>
+      <div className="p-4 space-y-4">{children}</div>
+    </section>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+        {label}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function SegmentedControl({
+  value, onChange, options,
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string; icon?: typeof Type }[]
+}) {
+  return (
+    <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-md">
+      {options.map((opt) => {
+        const Icon = opt.icon
+        const isSelected = value === opt.value
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onChange(opt.value)}
+            className={`flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-medium transition-colors ${
+              isSelected
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {Icon && <Icon className="h-3.5 w-3.5" />}
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── New Theme Modal ──────────────────────────────────────────────────────
+
+function NewThemeModal({
+  onClose, onSaved,
+}: {
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [name, setName] = useState("")
+  const [type, setType] = useState<"global" | "seasonal" | "per-song">("global")
+  const [seasonStart, setSeasonStart] = useState("")
+  const [seasonEnd, setSeasonEnd] = useState("")
+  const [saving, setSaving] = useState(false)
 
   const handleSave = async () => {
-    if (!name.trim()) return;
-    setSaving(true);
+    if (!name.trim()) return
+    setSaving(true)
     await window.worshipsync.themes.create({
       name: name.trim(),
       type,
@@ -749,125 +553,87 @@ function NewThemeModal({
         textShadowOpacity: 40,
         maxLinesPerSlide: 2,
       }),
-    });
-    setSaving(false);
-    onSaved();
-  };
+    })
+    setSaving(false)
+    onSaved()
+  }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.75)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
-    >
-      <div
-        style={{
-          background: "var(--surface-1)",
-          border: "1px solid var(--border-default)",
-          borderRadius: 14,
-          width: 400,
-          padding: 24,
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        hideClose
+        className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl"
+        style={{ width: 440, maxWidth: "95vw" }}
       >
-        <div style={{ fontSize: 14, fontWeight: 600 }}>New theme</div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Name *</label>
-          <input
-            className="input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Christmas, Easter, Default"
-            autoFocus
-          />
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Type</label>
-          <div style={{ display: "flex", gap: 6 }}>
-            {(["global", "seasonal", "per-song"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => setType(t)}
-                style={{
-                  flex: 1,
-                  padding: "6px 4px",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontSize: 11,
-                  border: `1px solid ${type === t ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                  background:
-                    type === t ? "var(--accent-blue-dim)" : "var(--surface-2)",
-                  color:
-                    type === t ? "var(--accent-blue)" : "var(--text-muted)",
-                  fontWeight: type === t ? 600 : 400,
-                }}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
+        <div className="flex flex-col bg-background text-foreground">
+          <div className="px-6 pt-5 pb-1">
+            <DialogTitle className="text-lg font-bold">New theme</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Create a new theme for slide appearance.
+            </p>
           </div>
-        </div>
 
-        {type === "seasonal" && (
-          <div style={{ display: "flex", gap: 10 }}>
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              <label className="label">Season start (MM-DD)</label>
-              <input
-                className="input"
-                value={seasonStart}
-                onChange={(e) => setSeasonStart(e.target.value)}
-                placeholder="12-01"
+          <div className="px-6 py-5 flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Name</label>
+              <Input
+                autoFocus
+                placeholder="e.g. Christmas, Easter, Default"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && name.trim() && handleSave()}
               />
             </div>
-            <div
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              <label className="label">Season end (MM-DD)</label>
-              <input
-                className="input"
-                value={seasonEnd}
-                onChange={(e) => setSeasonEnd(e.target.value)}
-                placeholder="01-06"
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Type</label>
+              <SegmentedControl
+                value={type}
+                onChange={(v) => setType(v as typeof type)}
+                options={[
+                  { value: "global",   label: "Global" },
+                  { value: "seasonal", label: "Seasonal" },
+                  { value: "per-song", label: "Per-song" },
+                ]}
               />
             </div>
-          </div>
-        )}
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-          >
-            {saving ? "Saving..." : "Create theme"}
-          </button>
+            {type === "seasonal" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">Season start</label>
+                  <Input
+                    placeholder="MM-DD"
+                    value={seasonStart}
+                    onChange={(e) => setSeasonStart(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-foreground">Season end</label>
+                  <Input
+                    placeholder="MM-DD"
+                    value={seasonEnd}
+                    onChange={(e) => setSeasonEnd(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={!name.trim() || saving}
+              onClick={handleSave}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {saving ? "Creating…" : "Create theme"}
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
-  );
+      </DialogContent>
+    </Dialog>
+  )
 }

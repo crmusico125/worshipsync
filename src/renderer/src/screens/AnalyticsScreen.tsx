@@ -1,469 +1,387 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from "react"
+import {
+  BarChart3, Calendar, TrendingUp, AlertCircle, Music2,
+  CheckCircle2, Clock, History,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 interface SongWithUsage {
-  id: number;
-  title: string;
-  artist: string;
-  key: string | null;
-  usageCount: number;
-  lastUsedDate: string | null;
-  lastUsedLabel: string | null;
+  id: number
+  title: string
+  artist: string
+  key: string | null
+  usageCount: number
+  lastUsedDate: string | null
+  lastUsedLabel: string | null
 }
 
 interface ServiceDate {
-  id: number;
-  date: string;
-  label: string;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+  id: number
+  date: string
+  label: string
+  status: string
+  createdAt: string
+  updatedAt: string
 }
 
 function weeksAgo(dateStr: string): number {
-  const d = new Date(dateStr + "T00:00:00");
-  const today = new Date();
+  const d = new Date(dateStr + "T00:00:00")
+  const today = new Date()
   return Math.floor(
     (today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 7),
-  );
+  )
 }
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+    month: "short", day: "numeric", year: "numeric",
+  })
 }
 
-export default function AnalyticsScreen() {
-  const [songUsage, setSongUsage] = useState<SongWithUsage[]>([]);
-  const [serviceHistory, setServiceHistory] = useState<ServiceDate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState<"usage" | "recent" | "alpha" | "never">(
-    "usage",
-  );
+type SortKey = "usage" | "recent" | "alpha" | "never"
 
-  useEffect(() => {
-    loadData();
-  }, []);
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "usage", label: "Most used" },
+  { key: "recent", label: "Recent" },
+  { key: "alpha", label: "A–Z" },
+  { key: "never", label: "Overdue" },
+]
+
+export default function AnalyticsScreen() {
+  const [songUsage, setSongUsage] = useState<SongWithUsage[]>([])
+  const [serviceHistory, setServiceHistory] = useState<ServiceDate[]>([])
+  const [loading, setLoading] = useState(true)
+  const [sortBy, setSortBy] = useState<SortKey>("usage")
+
+  useEffect(() => { loadData() }, [])
 
   const loadData = async () => {
-    setLoading(true);
+    setLoading(true)
     const [usage, history] = await Promise.all([
       window.worshipsync.analytics.getSongUsage() as Promise<SongWithUsage[]>,
-      window.worshipsync.analytics.getServiceHistory() as Promise<
-        ServiceDate[]
-      >,
-    ]);
-    setSongUsage(usage);
-    setServiceHistory(history);
-    setLoading(false);
-  };
+      window.worshipsync.analytics.getServiceHistory() as Promise<ServiceDate[]>,
+    ])
+    setSongUsage(usage)
+    setServiceHistory(history)
+    setLoading(false)
+  }
 
   const sorted = [...songUsage].sort((a, b) => {
-    if (sortBy === "usage") return b.usageCount - a.usageCount;
-    if (sortBy === "alpha") return a.title.localeCompare(b.title);
+    if (sortBy === "usage") return b.usageCount - a.usageCount
+    if (sortBy === "alpha") return a.title.localeCompare(b.title)
     if (sortBy === "never") {
-      if (!a.lastUsedDate && !b.lastUsedDate) return 0;
-      if (!a.lastUsedDate) return -1;
-      if (!b.lastUsedDate) return 1;
-      return a.lastUsedDate.localeCompare(b.lastUsedDate);
+      if (!a.lastUsedDate && !b.lastUsedDate) return 0
+      if (!a.lastUsedDate) return -1
+      if (!b.lastUsedDate) return 1
+      return a.lastUsedDate.localeCompare(b.lastUsedDate)
     }
-    // recent
-    if (!a.lastUsedDate && !b.lastUsedDate) return 0;
-    if (!a.lastUsedDate) return 1;
-    if (!b.lastUsedDate) return -1;
-    return b.lastUsedDate.localeCompare(a.lastUsedDate);
-  });
+    if (!a.lastUsedDate && !b.lastUsedDate) return 0
+    if (!a.lastUsedDate) return 1
+    if (!b.lastUsedDate) return -1
+    return b.lastUsedDate.localeCompare(a.lastUsedDate)
+  })
 
-  const maxUsage = Math.max(...songUsage.map((s) => s.usageCount), 1);
-  const totalServices = serviceHistory.length;
-  const totalUnique = songUsage.filter((s) => s.usageCount > 0).length;
-  const neverUsed = songUsage.filter((s) => s.usageCount === 0).length;
+  const maxUsage = Math.max(...songUsage.map((s) => s.usageCount), 1)
+  const totalServices = serviceHistory.length
+  const totalUnique = songUsage.filter((s) => s.usageCount > 0).length
+  const neverUsed = songUsage.filter((s) => s.usageCount === 0).length
   const overdueCount = songUsage.filter(
     (s) => s.lastUsedDate && weeksAgo(s.lastUsedDate) >= 8,
-  ).length;
-
-  const getRotationStatus = (
-    song: SongWithUsage,
-  ): { label: string; color: string } => {
-    if (song.usageCount === 0)
-      return { label: "Never used", color: "var(--text-muted)" };
-    if (!song.lastUsedDate)
-      return { label: "Unknown", color: "var(--text-muted)" };
-    const weeks = weeksAgo(song.lastUsedDate);
-    if (weeks <= 2)
-      return { label: `${weeks}w ago`, color: "var(--accent-green)" };
-    if (weeks <= 6)
-      return { label: `${weeks}w ago`, color: "var(--accent-blue)" };
-    if (weeks <= 10)
-      return { label: `${weeks}w ago`, color: "var(--accent-amber)" };
-    return { label: `${weeks}w ago`, color: "var(--accent-red)" };
-  };
+  ).length
 
   if (loading) {
     return (
-      <div
-        style={{
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
-          Loading analytics...
-        </span>
+      <div className="h-full flex items-center justify-center bg-background text-foreground">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <BarChart3 className="h-4 w-4 animate-pulse" />
+          Loading analytics…
+        </div>
       </div>
-    );
+    )
   }
 
+  const stats = [
+    {
+      label: "Total services",
+      value: totalServices,
+      sub: "logged",
+      icon: Calendar,
+    },
+    {
+      label: "Songs used",
+      value: totalUnique,
+      sub: `of ${songUsage.length} in library`,
+      icon: Music2,
+    },
+    {
+      label: "Overdue rotation",
+      value: overdueCount,
+      sub: "not used in 8+ wks",
+      icon: AlertCircle,
+      tone: overdueCount > 0 ? "amber" as const : undefined,
+    },
+    {
+      label: "Never used",
+      value: neverUsed,
+      sub: "songs in library",
+      icon: Clock,
+    },
+  ]
+
   return (
-    <div style={{ height: "100%", overflowY: "auto", padding: 16 }}>
-      {/* Stat cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        {[
-          { label: "Total services", value: totalServices, sub: "logged" },
-          {
-            label: "Songs used",
-            value: totalUnique,
-            sub: `of ${songUsage.length} in library`,
-          },
-          {
-            label: "Overdue rotation",
-            value: overdueCount,
-            sub: "not used in 8+ wks",
-          },
-          { label: "Never used", value: neverUsed, sub: "songs in library" },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            style={{
-              background: "var(--surface-2)",
-              borderRadius: 10,
-              padding: "14px 16px",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--text-muted)",
-                marginBottom: 5,
-              }}
-            >
-              {stat.label}
-            </div>
-            <div
-              style={{
-                fontSize: 28,
-                fontWeight: 700,
-                color: "var(--text-primary)",
-                lineHeight: 1,
-              }}
-            >
-              {stat.value}
-            </div>
-            <div
-              style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 4 }}
-            >
-              {stat.sub}
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="h-full overflow-y-auto bg-background text-foreground">
+      <div className="max-w-6xl mx-auto px-6 py-6">
 
-      <div
-        style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 12 }}
-      >
-        {/* Song usage table */}
-        <div className="card">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginBottom: 12,
-            }}
-          >
-            <div className="label" style={{ flex: 1 }}>
-              Song usage
-            </div>
-            <div style={{ display: "flex", gap: 5 }}>
-              {(["usage", "recent", "alpha", "never"] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSortBy(s)}
-                  style={{
-                    fontSize: 10,
-                    padding: "3px 8px",
-                    borderRadius: 5,
-                    cursor: "pointer",
-                    border: `1px solid ${sortBy === s ? "var(--accent-blue)" : "var(--border-subtle)"}`,
-                    background:
-                      sortBy === s
-                        ? "var(--accent-blue-dim)"
-                        : "var(--surface-2)",
-                    color:
-                      sortBy === s ? "var(--accent-blue)" : "var(--text-muted)",
-                    fontWeight: sortBy === s ? 600 : 400,
-                  }}
-                >
-                  {s === "usage"
-                    ? "Most used"
-                    : s === "recent"
-                      ? "Recent"
-                      : s === "alpha"
-                        ? "A–Z"
-                        : "Overdue"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {sorted.map((song) => {
-              const status = getRotationStatus(song);
-              const barWidth =
-                maxUsage > 0 ? (song.usageCount / maxUsage) * 100 : 0;
-              return (
-                <div
-                  key={song.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "7px 10px",
-                    borderRadius: 7,
-                    background: "var(--surface-2)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {song.title}
-                    </div>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        height: 4,
-                        background: "var(--surface-3)",
-                        borderRadius: 2,
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: 4,
-                          borderRadius: 2,
-                          width: `${barWidth}%`,
-                          background:
-                            song.usageCount === 0
-                              ? "var(--border-default)"
-                              : "var(--accent-blue)",
-                          transition: "width 0.3s",
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      {song.usageCount}×
-                    </div>
-                    <div
-                      style={{ fontSize: 9, color: status.color, marginTop: 1 }}
-                    >
-                      {status.label}
-                    </div>
-                  </div>
+        {/* ── Stat cards ──────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          {stats.map((stat) => {
+            const Icon = stat.icon
+            return (
+              <div
+                key={stat.label}
+                className="rounded-lg border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {stat.label}
+                  </span>
+                  <Icon
+                    className={`h-3.5 w-3.5 ${
+                      stat.tone === "amber" ? "text-amber-500" : "text-muted-foreground"
+                    }`}
+                  />
                 </div>
-              );
-            })}
-          </div>
+                <div className="text-2xl font-bold leading-none">{stat.value}</div>
+                <div className="text-[10px] text-muted-foreground mt-1.5">
+                  {stat.sub}
+                </div>
+              </div>
+            )
+          })}
         </div>
 
-        {/* Right column */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* Rotation health */}
-          <div className="card">
-            <div className="label" style={{ marginBottom: 10 }}>
-              Rotation health
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+
+          {/* ── Song usage table ──────────────────────────────────────── */}
+          <section className="rounded-lg border border-border bg-card overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex-1">
+                Song usage
+              </span>
+              <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-md">
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => setSortBy(opt.key)}
+                    className={`px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
+                      sortBy === opt.key
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {songUsage
-                .filter((s) => s.usageCount > 0)
-                .sort((a, b) => {
-                  if (!a.lastUsedDate) return 1;
-                  if (!b.lastUsedDate) return -1;
-                  return a.lastUsedDate.localeCompare(b.lastUsedDate);
-                })
-                .slice(0, 6)
-                .map((song) => {
-                  const weeks = song.lastUsedDate
-                    ? weeksAgo(song.lastUsedDate)
-                    : 99;
-                  const isOverdue = weeks >= 8;
-                  const isOverused = song.usageCount >= 4 && weeks <= 3;
+
+            <div className="p-3 space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto">
+              {sorted.length === 0 ? (
+                <div className="text-center py-8 text-xs text-muted-foreground">
+                  No songs in library yet.
+                </div>
+              ) : (
+                sorted.map((song) => {
+                  const status = getRotationStatus(song)
+                  const barWidth = maxUsage > 0 ? (song.usageCount / maxUsage) * 100 : 0
                   return (
                     <div
                       key={song.id}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        padding: "6px 8px",
-                        borderRadius: 6,
-                        background: "var(--surface-2)",
-                      }}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md border border-border bg-background"
                     >
-                      <div
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          flexShrink: 0,
-                          background: isOverused
-                            ? "var(--accent-red)"
-                            : isOverdue
-                              ? "var(--accent-amber)"
-                              : "var(--accent-green)",
-                        }}
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 600,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium text-foreground truncate">
                           {song.title}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 9,
-                            color: "var(--text-muted)",
-                            marginTop: 1,
-                          }}
-                        >
-                          {isOverused
-                            ? "Consider a break"
-                            : isOverdue
-                              ? `${weeks} weeks since last use`
-                              : "Good rotation"}
+                        <div className="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all ${
+                              song.usageCount === 0 ? "bg-muted-foreground/30" : "bg-primary"
+                            }`}
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-bold text-foreground tabular-nums">
+                          {song.usageCount}×
+                        </div>
+                        <div className={`text-[10px] mt-0.5 ${status.className}`}>
+                          {status.label}
                         </div>
                       </div>
                     </div>
-                  );
-                })}
+                  )
+                })
+              )}
             </div>
-          </div>
+          </section>
 
-          {/* Service history */}
-          <div className="card">
-            <div className="label" style={{ marginBottom: 10 }}>
-              Service history
-            </div>
-            {serviceHistory.length === 0 ? (
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-                No services logged yet
+          {/* ── Right column ──────────────────────────────────────────── */}
+          <div className="space-y-4">
+
+            {/* Rotation health */}
+            <section className="rounded-lg border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Rotation health
+                </span>
               </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                {serviceHistory.slice(0, 8).map((service) => (
-                  <div
-                    key={service.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "6px 8px",
-                      borderRadius: 6,
-                      background: "var(--surface-2)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        flexShrink: 0,
-                        background:
-                          service.status === "ready"
-                            ? "var(--accent-green)"
-                            : service.status === "in-progress"
-                              ? "var(--accent-amber)"
-                              : "var(--border-default)",
-                      }}
-                    />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600 }}>
-                        {service.label}
+              <div className="p-3 space-y-1.5">
+                {(() => {
+                  const items = songUsage
+                    .filter((s) => s.usageCount > 0)
+                    .sort((a, b) => {
+                      if (!a.lastUsedDate) return 1
+                      if (!b.lastUsedDate) return -1
+                      return a.lastUsedDate.localeCompare(b.lastUsedDate)
+                    })
+                    .slice(0, 6)
+                  if (items.length === 0) {
+                    return (
+                      <div className="text-center py-4 text-xs text-muted-foreground">
+                        No usage data yet.
                       </div>
+                    )
+                  }
+                  return items.map((song) => {
+                    const weeks = song.lastUsedDate ? weeksAgo(song.lastUsedDate) : 99
+                    const isOverdue = weeks >= 8
+                    const isOverused = song.usageCount >= 4 && weeks <= 3
+                    return (
                       <div
-                        style={{
-                          fontSize: 9,
-                          color: "var(--text-muted)",
-                          marginTop: 1,
-                        }}
+                        key={song.id}
+                        className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-background border border-border"
                       >
-                        {formatDate(service.date)}
+                        <div
+                          className={`h-2 w-2 rounded-full shrink-0 ${
+                            isOverused
+                              ? "bg-destructive"
+                              : isOverdue
+                                ? "bg-amber-500"
+                                : "bg-green-500"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-medium text-foreground truncate">
+                            {song.title}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {isOverused
+                              ? "Consider a break"
+                              : isOverdue
+                                ? `${weeks} weeks since last use`
+                                : "Good rotation"}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 9,
-                        padding: "1px 6px",
-                        borderRadius: 10,
-                        fontWeight: 600,
-                        background:
-                          service.status === "ready"
-                            ? "var(--accent-green-dim)"
-                            : service.status === "in-progress"
-                              ? "var(--accent-amber-dim)"
-                              : "var(--surface-3)",
-                        color:
-                          service.status === "ready"
-                            ? "var(--accent-green)"
-                            : service.status === "in-progress"
-                              ? "var(--accent-amber)"
-                              : "var(--text-muted)",
-                      }}
-                    >
-                      {service.status === "ready"
-                        ? "Ready"
-                        : service.status === "in-progress"
-                          ? "In prep"
-                          : "Empty"}
-                    </div>
-                  </div>
-                ))}
+                    )
+                  })
+                })()}
               </div>
-            )}
+            </section>
+
+            {/* Service history */}
+            <section className="rounded-lg border border-border bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+                <History className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Service history
+                </span>
+              </div>
+              <div className="p-3 space-y-1.5">
+                {serviceHistory.length === 0 ? (
+                  <div className="text-center py-4 text-xs text-muted-foreground">
+                    No services logged yet.
+                  </div>
+                ) : (
+                  serviceHistory.slice(0, 8).map((service) => (
+                    <div
+                      key={service.id}
+                      className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-background border border-border"
+                    >
+                      <div
+                        className={`h-2 w-2 rounded-full shrink-0 ${
+                          service.status === "ready"
+                            ? "bg-green-500"
+                            : service.status === "in-progress"
+                              ? "bg-amber-500"
+                              : "bg-muted-foreground/40"
+                        }`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-medium text-foreground truncate">
+                          {service.label}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                          {formatDate(service.date)}
+                        </div>
+                      </div>
+                      <ServiceStatusBadge status={service.status} />
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-1.5"
+              onClick={loadData}
+            >
+              <BarChart3 className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
           </div>
         </div>
       </div>
     </div>
-  );
+  )
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function getRotationStatus(song: SongWithUsage): { label: string; className: string } {
+  if (song.usageCount === 0) return { label: "Never used", className: "text-muted-foreground" }
+  if (!song.lastUsedDate) return { label: "Unknown", className: "text-muted-foreground" }
+  const weeks = weeksAgo(song.lastUsedDate)
+  if (weeks <= 2) return { label: `${weeks}w ago`, className: "text-green-500" }
+  if (weeks <= 6) return { label: `${weeks}w ago`, className: "text-primary" }
+  if (weeks <= 10) return { label: `${weeks}w ago`, className: "text-amber-500" }
+  return { label: `${weeks}w ago`, className: "text-destructive" }
+}
+
+function ServiceStatusBadge({ status }: { status: string }) {
+  if (status === "ready") {
+    return (
+      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-500">
+        Ready
+      </span>
+    )
+  }
+  if (status === "in-progress") {
+    return (
+      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
+        In prep
+      </span>
+    )
+  }
+  return (
+    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+      Empty
+    </span>
+  )
 }
