@@ -23,7 +23,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
 
   window: {
     getDisplayCount: () => ipcRenderer.invoke('window:getDisplayCount'),
-    openProjection: () => ipcRenderer.send('window:openProjection'),
+    getDisplays: () => ipcRenderer.invoke('window:getDisplays') as Promise<
+      { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
+    >,
+    openProjection: (displayId?: number) => ipcRenderer.send('window:openProjection', displayId),
     closeProjection: () => ipcRenderer.send('window:closeProjection'),
     onProjectionReady: (cb: () => void) => {
       ipcRenderer.on('projection:ready', cb)

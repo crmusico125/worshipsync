@@ -47,10 +47,12 @@ function createControlWindow(): void {
   }
 }
 
-function createProjectionWindow(): void {
+function createProjectionWindow(displayId?: number): void {
   const displays = screen.getAllDisplays()
-  const externalDisplay = displays.find(d => d.id !== screen.getPrimaryDisplay().id)
-  const targetDisplay = externalDisplay ?? screen.getPrimaryDisplay()
+  const target = displayId
+    ? displays.find(d => d.id === displayId)
+    : displays.find(d => d.id !== screen.getPrimaryDisplay().id)
+  const targetDisplay = target ?? screen.getPrimaryDisplay()
   const { x, y, width, height } = targetDisplay.bounds
 
   projectionWindow = new BrowserWindow({
@@ -60,9 +62,9 @@ function createProjectionWindow(): void {
     height,
     title: 'WorshipSync — Projection',
     backgroundColor: '#000000',
-    fullscreen: !!externalDisplay,
-    frame: !externalDisplay,
-    alwaysOnTop: !!externalDisplay,
+    fullscreen: !!target,
+    frame: !target,
+    alwaysOnTop: !!target,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -108,9 +110,20 @@ ipcMain.handle('window:getDisplayCount', () => {
   return screen.getAllDisplays().length
 })
 
-ipcMain.on('window:openProjection', () => {
+ipcMain.handle('window:getDisplays', () => {
+  const primary = screen.getPrimaryDisplay()
+  return screen.getAllDisplays().map(d => ({
+    id: d.id,
+    label: d.label || `Display ${d.id}`,
+    width: d.size.width,
+    height: d.size.height,
+    isPrimary: d.id === primary.id,
+  }))
+})
+
+ipcMain.on('window:openProjection', (_event, displayId?: number) => {
   if (!projectionWindow || projectionWindow.isDestroyed()) {
-    createProjectionWindow()
+    createProjectionWindow(displayId)
   } else {
     projectionWindow.focus()
   }

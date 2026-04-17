@@ -1,12 +1,13 @@
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import {
-  MonitorOff, Monitor, Radio, SkipForward, Clock,
-  Music2, Lock, ChevronDown, ChevronUp, Settings2, Image as ImageIcon, Type,
-  Play, AlertCircle,
+  MonitorOff, Monitor, ChevronLeft, ChevronRight,
+  Music2, GripVertical, Pencil, Plus,
+  Play, AlertCircle, XCircle, Type,
+  Tv,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { useServiceStore } from "../store/useServiceStore"
+import LibraryModal from "../components/LibraryModal"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,6 @@ function buildSlidesForSong(
       })
     }
   }
-  // Append blank slide at end
   slides.push({
     lines: [""], sectionLabel: "Blank", sectionType: "blank",
     sectionId: -1, globalIndex: globalIdx,
@@ -102,7 +102,7 @@ interface Props {
 }
 
 export default function PresenterDashboard({ projectionOpen, onProjectionChange, onExitLive }: Props) {
-  const { selectedService, lineup, loadLineup } = useServiceStore()
+  const { selectedService, lineup, loadLineup, addSongToLineup } = useServiceStore()
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([])
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
@@ -111,16 +111,22 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
   const [defaultTheme, setDefaultTheme] = useState<any>(null)
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null)
-  const [bgImages, setBgImages] = useState<string[]>([])
-  const [themeOverrides, setThemeOverrides] = useState<Partial<ThemeStyle>>({})
-  const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
-  const [showAppearance, setShowAppearance] = useState(false)
-  const [appearanceTab, setAppearanceTab] = useState<"text" | "bg">("text")
+  const [showLibrary, setShowLibrary] = useState(false)
+  const [displays, setDisplays] = useState<
+    { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
+  >([])
+  const [selectedDisplayId, setSelectedDisplayId] = useState<number | undefined>(undefined)
   const slideGridRef = useRef<HTMLDivElement>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (selectedService) loadLineup(selectedService.id)
+    window.worshipsync.window.getDisplays().then((d) => {
+      setDisplays(d)
+      // Default to first external display, or primary if only one
+      const ext = d.find(x => !x.isPrimary)
+      setSelectedDisplayId(ext?.id ?? d[0]?.id)
+    })
     window.worshipsync.themes.getDefault().then((t: any) => {
       setDefaultTheme(t)
       if (t?.settings) {
@@ -132,7 +138,6 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
       all.forEach(t => { c[t.id] = t })
       setThemeCache(c)
     })
-    window.worshipsync.backgrounds.listImages().then(setBgImages).catch(() => {})
   }, [])
 
   // ── Build live songs ─────────────────────────────────────────────────────
@@ -164,17 +169,16 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     if (t?.settings) {
       try { base = { ...DEFAULT_THEME, ...JSON.parse(t.settings) } } catch {}
     }
-    return { ...base, ...themeOverrides }
-  }, [themeCache, defaultTheme, themeOverrides])
+    return base
+  }, [themeCache, defaultTheme])
 
   const resolveBg = useCallback((song: LiveSong): string | undefined => {
-    if (bgOverride !== undefined) return bgOverride ?? undefined
     if (song.backgroundPath) return song.backgroundPath
     if (song.themeId && themeCache[song.themeId]) {
       try { return JSON.parse(themeCache[song.themeId].settings).backgroundPath ?? undefined } catch {}
     }
     return defaultThemeBg ?? undefined
-  }, [themeCache, defaultThemeBg, bgOverride])
+  }, [themeCache, defaultThemeBg])
 
   // ── Slide projection ─────────────────────────────────────────────────────
   const sendSlide = useCallback((songIdx: number, slideIdx: number) => {
@@ -216,31 +220,35 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     }
   }, [liveSongs, resolveTheme, resolveBg])
 
-  // Re-send current slide when overrides change
-  useEffect(() => {
-    if (activeSlideIdx >= 0 && !isBlank) {
-      sendSlide(selectedSongIdx, activeSlideIdx)
-    }
-  }, [themeOverrides, bgOverride])
-
   // Reset slide when switching songs
-  useEffect(() => {
-    setActiveSlideIdx(-1)
-    setThemeOverrides({})
-    setBgOverride(undefined)
-  }, [selectedSongIdx])
+  useEffect(() => { setActiveSlideIdx(-1) }, [selectedSongIdx])
 
   // ── Controls ─────────────────────────────────────────────────────────────
-  const blank = () => { window.worshipsync.slide.blank(true); setIsBlank(true) }
+  const clearAll = () => { window.worshipsync.slide.blank(true); setIsBlank(true); setActiveSlideIdx(-1) }
+  const clearText = () => { window.worshipsync.slide.blank(true); setIsBlank(true) }
+  const toBlack = () => { window.worshipsync.slide.blank(true); setIsBlank(true) }
   const showLogo = () => { window.worshipsync.slide.logo(true); setIsBlank(false) }
 
-  const goNextSong = () => {
+  const goNextSong = useCallback(() => {
     const next = selectedSongIdx + 1
     if (next < liveSongs.length) setSelectedSongIdx(next)
-  }
+  }, [selectedSongIdx, liveSongs.length])
+
+  const goPrevSlide = useCallback(() => {
+    const prev = activeSlideIdx - 1
+    if (prev >= 0) sendSlide(selectedSongIdx, prev)
+  }, [activeSlideIdx, selectedSongIdx, sendSlide])
+
+  const goNextSlide = useCallback(() => {
+    const song = liveSongs[selectedSongIdx]
+    if (!song) return
+    const next = activeSlideIdx + 1
+    if (next < song.slides.length) sendSlide(selectedSongIdx, next)
+    else goNextSong()
+  }, [activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, goNextSong])
 
   const startLive = () => {
-    window.worshipsync.window.openProjection()
+    window.worshipsync.window.openProjection(selectedDisplayId)
     onProjectionChange(true)
   }
 
@@ -251,29 +259,28 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     onExitLive()
   }
 
+  const handleLibraryAdd = async (songIds: number[]) => {
+    for (const id of songIds) await addSongToLineup(id)
+  }
+
   // ── Keyboard nav ─────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      const song = liveSongs[selectedSongIdx]
-      if (!song) return
       if (e.key === "ArrowRight" || e.key === " ") {
         e.preventDefault()
-        const next = activeSlideIdx + 1
-        if (next < song.slides.length) sendSlide(selectedSongIdx, next)
-        else goNextSong()
+        goNextSlide()
       } else if (e.key === "ArrowLeft") {
         e.preventDefault()
-        const prev = activeSlideIdx - 1
-        if (prev >= 0) sendSlide(selectedSongIdx, prev)
+        goPrevSlide()
       } else if (e.key === "b" || e.key === "B") {
         e.preventDefault()
-        blank()
+        toBlack()
       }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [liveSongs, selectedSongIdx, activeSlideIdx, sendSlide])
+  }, [goNextSlide, goPrevSlide])
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const currentSong = liveSongs[selectedSongIdx] ?? null
@@ -281,6 +288,24 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const nextSong = liveSongs[selectedSongIdx + 1] ?? null
   const effectiveTheme = currentSong ? resolveTheme(currentSong) : DEFAULT_THEME
   const effectiveBg = currentSong ? resolveBg(currentSong) : undefined
+
+  const totalSlides = useMemo(
+    () => currentSong ? currentSong.slides.length : 0,
+    [currentSong],
+  )
+
+  // Find next slide for the "Next Up" preview
+  const nextUp = useMemo(() => {
+    if (!currentSong || activeSlideIdx < 0) return null
+    const nextIdx = activeSlideIdx + 1
+    if (nextIdx < currentSong.slides.length) {
+      return { slide: currentSong.slides[nextIdx], songTitle: null }
+    }
+    if (nextSong && nextSong.slides.length > 0) {
+      return { slide: nextSong.slides[0], songTitle: nextSong.title }
+    }
+    return null
+  }, [currentSong, activeSlideIdx, nextSong])
 
   if (!selectedService) {
     return (
@@ -294,7 +319,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     )
   }
 
-  // ── Pre-live idle state: projection not open yet ─────────────────────────
+  // ── Pre-live idle ──────────────────────────────────────────────────────
   if (!projectionOpen) {
     return (
       <PreLiveIdle
@@ -302,81 +327,96 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         songs={liveSongs}
         canGoLive={liveSongs.length > 0}
         onStartLive={startLive}
+        displays={displays}
+        selectedDisplayId={selectedDisplayId}
+        onDisplayChange={setSelectedDisplayId}
       />
     )
   }
 
   return (
-    <div className="h-full flex overflow-hidden bg-background text-foreground ring-2 ring-red-500/60 ring-inset">
+    <div className="h-full flex overflow-hidden bg-background text-foreground">
 
-      {/* ═════ LEFT SIDEBAR: Locked song order ═════ */}
-      <div className="w-56 shrink-0 border-r border-red-500/30 flex flex-col bg-card">
+      {/* ═════ LEFT: Lineup ═════ */}
+      <div className="w-48 shrink-0 border-r border-border flex flex-col bg-card">
 
-        {/* Live badge */}
-        <div className="px-3 py-2.5 border-b border-red-500/30 bg-red-500/10 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-xs font-bold text-red-400 uppercase tracking-wider">Live</span>
-            <Lock className="h-3 w-3 text-red-400/70 ml-auto" />
+        {/* Service header */}
+        <div className="px-3 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="h-5 w-5 rounded bg-primary/20 flex items-center justify-center shrink-0">
+              <Music2 className="h-3 w-3 text-primary" />
+            </div>
+            <span className="text-xs font-bold text-foreground truncate flex-1">
+              {selectedService.label}
+            </span>
           </div>
-          <p className="text-[10px] text-red-400/70 mt-1 truncate">
-            {selectedService.label}
-          </p>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-[10px] text-muted-foreground">
+              {new Date(selectedService.date + "T00:00:00").toLocaleDateString("en-US", {
+                month: "short", day: "numeric", year: "numeric",
+              })}
+            </span>
+            <span className="ml-auto inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              Live
+            </span>
+          </div>
         </div>
 
-        <div className="px-4 py-2 shrink-0">
+        {/* Lineup label */}
+        <div className="px-3 py-2 shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Song Order
+            Lineup
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2">
+        {/* Song list */}
+        <div className="flex-1 overflow-y-auto px-1.5">
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i
-            const isNext = selectedSongIdx + 1 === i
             return (
               <button
                 key={song.lineupItemId}
                 onClick={() => setSelectedSongIdx(i)}
-                className={`w-full text-left px-2.5 py-2 rounded-md mb-0.5 transition-colors ${
-                  isCurrent ? "bg-red-500/20 text-red-300 border border-red-500/30"
-                  : isNext ? "bg-accent/80 border border-border"
-                  : "text-foreground hover:bg-accent border border-transparent"
+                className={`w-full text-left px-2 py-2 rounded-md mb-0.5 transition-colors group ${
+                  isCurrent
+                    ? "bg-primary/10 border border-primary/30"
+                    : "border border-transparent hover:bg-accent/50"
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground font-mono w-4 shrink-0">{i + 1}</span>
+                  <div className={`h-6 w-6 rounded flex items-center justify-center shrink-0 ${
+                    isCurrent ? "bg-primary/20" : "bg-muted"
+                  }`}>
+                    <Music2 className={`h-3 w-3 ${isCurrent ? "text-primary" : "text-muted-foreground"}`} />
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">{song.title}</p>
-                    <p className={`text-[10px] truncate mt-0.5 ${
-                      isCurrent ? "text-red-300/60" : "text-muted-foreground"
+                    <p className={`text-[11px] font-medium truncate ${
+                      isCurrent ? "text-primary" : "text-foreground"
                     }`}>
-                      {song.artist || "Unknown"}
-                      {song.key && ` · ${song.key}`}
+                      {song.title}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground truncate mt-0.5">
+                      Song
+                      {song.key && ` · Key: ${song.key}`}
                     </p>
                   </div>
-                  {isNext && (
-                    <span className="text-[9px] font-bold uppercase text-muted-foreground">Next</span>
-                  )}
+                  <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               </button>
             )
           })}
         </div>
 
-        {/* Footer */}
-        <div className="px-3 py-3 border-t border-red-500/20 shrink-0 space-y-1.5">
-          {nextSong && (
-            <Button size="sm" className="w-full h-8 text-xs gap-1.5" onClick={goNextSong}>
-              <SkipForward className="h-3.5 w-3.5" /> Next: {nextSong.title}
-            </Button>
-          )}
+        {/* Add Item */}
+        <div className="p-2 border-t border-border shrink-0">
           <Button
-            variant="outline" size="sm"
-            className="w-full h-8 text-xs gap-1.5 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-            onClick={endShow}
+            variant="ghost"
+            size="sm"
+            className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setShowLibrary(true)}
           >
-            <MonitorOff className="h-3.5 w-3.5" /> End Show
+            <Plus className="h-3.5 w-3.5" /> Add Item
           </Button>
         </div>
       </div>
@@ -385,41 +425,33 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {currentSong ? (
           <>
-            {/* Song header */}
-            <div className="px-6 pt-5 pb-3 border-b border-red-500/20 shrink-0">
+            {/* Song header + tabs */}
+            <div className="px-5 pt-4 pb-3 border-b border-border shrink-0">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h1 className="text-lg font-bold truncate">{currentSong.title}</h1>
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  <h1 className="text-base font-bold truncate">{currentSong.title}</h1>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
                     {currentSong.artist || "Unknown artist"}
-                    {currentSong.ccliNumber && ` · CCLI: ${currentSong.ccliNumber}`}
-                    {currentSong.key && ` · Key: ${currentSong.key}`}
+                    {currentSong.ccliNumber && ` · CCLI: #${currentSong.ccliNumber}`}
                   </p>
                 </div>
-                <span className="shrink-0 flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded-md">
-                  <Radio className="h-3 w-3 animate-pulse" /> Broadcasting
-                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-7 text-[11px] shrink-0"
+                  onClick={() => {/* Edit lyrics - would require modal integration */}}
+                >
+                  <Pencil className="h-3 w-3" /> Edit Lyrics
+                </Button>
               </div>
             </div>
 
-            {/* Control bar */}
-            <div className="flex items-center gap-2 px-6 py-2.5 border-b border-red-500/20 shrink-0">
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={blank}>
-                <MonitorOff className="h-3 w-3 mr-1.5" /> Blank (B)
-              </Button>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={showLogo}>
-                <Monitor className="h-3 w-3 mr-1.5" /> Logo
-              </Button>
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                ← → navigate · Space next · B blank
-              </span>
-            </div>
-
             {/* Slide grid */}
-            <div ref={slideGridRef} className="flex-1 overflow-y-auto p-5">
-              <div className="grid grid-cols-3 gap-3">
+            <div ref={slideGridRef} className="flex-1 overflow-y-auto p-4">
+              <div className="grid grid-cols-3 gap-2.5">
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i
+                  const bg = resolveBg(currentSong)
                   return (
                     <button
                       key={i}
@@ -429,16 +461,44 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                       }}
                       className={`rounded-lg overflow-hidden border-2 transition-all text-left focus:outline-none focus-visible:outline-none ${
                         isActive
-                          ? "border-red-500 ring-2 ring-red-500/30 scale-[1.02]"
+                          ? "border-primary ring-2 ring-primary/30 scale-[1.02]"
                           : "border-border hover:border-primary/50"
                       }`}
                     >
-                      <div className="bg-gray-900 p-3 relative" style={{ aspectRatio: "16/9" }}>
-                        <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white ${BADGE_COLORS[slide.sectionType] ?? "bg-slate-600"}`}>
+                      <div className="relative" style={{ aspectRatio: "16/9" }}>
+                        {/* Background */}
+                        {bg && slide.sectionType !== "blank" ? (
+                          <>
+                            <img
+                              src={`file://${bg}`}
+                              className="absolute inset-0 w-full h-full object-cover"
+                              alt=""
+                            />
+                            <div
+                              className="absolute inset-0"
+                              style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }}
+                            />
+                          </>
+                        ) : (
+                          <div className="absolute inset-0 bg-gray-900" />
+                        )}
+
+                        {/* Badge */}
+                        <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white z-10 ${BADGE_COLORS[slide.sectionType] ?? "bg-slate-600"}`}>
                           {slide.sectionLabel}
                         </span>
-                        <div className="flex items-center justify-center h-full px-2">
-                          <p className="text-[11px] text-white text-center leading-relaxed whitespace-pre-wrap">
+
+                        {/* Lyrics */}
+                        <div className="relative z-10 flex items-center justify-center h-full px-2.5 py-2">
+                          <p
+                            className="text-[10px] text-center leading-relaxed whitespace-pre-wrap"
+                            style={{
+                              color: effectiveTheme.textColor,
+                              fontFamily: effectiveTheme.fontFamily,
+                              textShadow: effectiveTheme.textShadowOpacity > 0
+                                ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none",
+                            }}
+                          >
                             {slide.lines.join("\n") || " "}
                           </p>
                         </div>
@@ -451,26 +511,46 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-center">
-            <p className="text-sm text-muted-foreground">No song selected</p>
+            <p className="text-sm text-muted-foreground">Select a song from the lineup</p>
           </div>
         )}
       </div>
 
-      {/* ═════ RIGHT: Live preview + controls ═════ */}
-      <div className="w-72 shrink-0 border-l border-red-500/30 flex flex-col bg-card overflow-hidden">
+      {/* ═════ RIGHT: Live Output ═════ */}
+      <div className="w-72 shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
 
-        {/* Live output preview */}
+        {/* Header */}
         <div className="px-4 pt-3 pb-2 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Live Output
-            </span>
+          <span className="text-xs font-bold text-foreground">Live Output</span>
+          <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            On Air
+          </span>
+        </div>
+
+        {/* Projector display selector */}
+        <div className="px-4 pb-2 shrink-0">
+          <div className="flex items-center gap-1.5 bg-muted/40 rounded-md overflow-hidden">
+            <div className="flex items-center gap-1.5 pl-2.5 shrink-0">
+              <Tv className="h-3 w-3 text-green-500" />
+            </div>
+            <select
+              className="flex-1 bg-transparent text-[10px] text-muted-foreground py-1.5 pr-2 border-none outline-none cursor-pointer"
+              value={selectedDisplayId ?? ""}
+              onChange={(e) => setSelectedDisplayId(Number(e.target.value))}
+            >
+              {displays.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
+        {/* Live preview */}
         <div
-          className="mx-4 mb-3 rounded-lg overflow-hidden border border-red-500/40 bg-gray-950 shrink-0 relative"
+          className="mx-4 rounded-lg overflow-hidden border border-border bg-gray-950 shrink-0 relative"
           style={{ aspectRatio: "16/9" }}
         >
           {effectiveBg && currentSlide && !isBlank && (
@@ -480,12 +560,12 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
             <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
           )}
           {currentSlide && !isBlank ? (
-            <div className={`relative h-full flex p-4 ${
+            <div className={`relative h-full flex p-3 ${
               effectiveTheme.textPosition === "top" ? "items-start" : effectiveTheme.textPosition === "bottom" ? "items-end" : "items-center"
             } ${
               effectiveTheme.textAlign === "left" ? "justify-start" : effectiveTheme.textAlign === "right" ? "justify-end" : "justify-center"
             }`}>
-              <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{
+              <p className="text-[11px] leading-relaxed whitespace-pre-wrap" style={{
                 color: effectiveTheme.textColor,
                 fontFamily: effectiveTheme.fontFamily,
                 fontWeight: effectiveTheme.fontWeight === "700" ? 700 : effectiveTheme.fontWeight === "600" ? 600 : 400,
@@ -507,115 +587,177 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
           )}
         </div>
 
-        {/* Clock */}
-        <div className="px-4 py-3 border-t border-red-500/20 shrink-0">
-          <LiveClock />
+        {/* Slide info */}
+        <div className="px-4 pt-2 pb-1 flex items-center justify-between text-[10px] text-muted-foreground shrink-0">
+          <span>
+            {activeSlideIdx >= 0 ? `Slide ${activeSlideIdx + 1} / ${totalSlides}` : "—"}
+          </span>
         </div>
 
-        {/* Up next */}
-        {nextSong && (
-          <div className="px-4 py-3 border-t border-red-500/20 shrink-0">
-            <h4 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Up Next</h4>
-            <div className="rounded-md border border-border p-2.5 bg-accent/50">
-              <p className="text-xs font-medium truncate">{nextSong.title}</p>
-              <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                {nextSong.artist || "Unknown"}
-                {nextSong.key && ` · ${nextSong.key}`}
-                {` · ${nextSong.slides.length} slides`}
-              </p>
+        {/* Prev / Next */}
+        <div className="px-4 pb-3 flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 gap-1 h-8 text-xs"
+            onClick={goPrevSlide}
+            disabled={activeSlideIdx <= 0}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" /> Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 gap-1 h-8 text-xs"
+            onClick={goNextSlide}
+          >
+            Next <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="border-t border-border px-4 py-3 shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">
+            Quick Actions
+          </span>
+          <div className="space-y-1">
+            <QuickAction icon={XCircle} label="Clear All" tone="red" onClick={clearAll} />
+            <QuickAction icon={Type} label="Clear Text" onClick={clearText} />
+            <QuickAction icon={MonitorOff} label="To Black" onClick={toBlack} />
+            <QuickAction icon={Monitor} label="Logo Screen" onClick={showLogo} />
+          </div>
+        </div>
+
+        {/* Next Up */}
+        {nextUp && (
+          <div className="border-t border-border px-4 py-3 shrink-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">
+              Next Up: <span className="text-foreground">
+                {nextUp.songTitle
+                  ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}`
+                  : nextUp.slide.sectionLabel}
+              </span>
+            </span>
+            <div
+              className="rounded-md overflow-hidden border border-border bg-gray-950 relative"
+              style={{ aspectRatio: "16/9" }}
+            >
+              {effectiveBg && nextUp.slide.sectionType !== "blank" && (
+                <>
+                  <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                  <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                </>
+              )}
+              <div className="relative h-full flex items-center justify-center p-2">
+                <p
+                  className="text-[9px] text-center leading-relaxed whitespace-pre-wrap"
+                  style={{
+                    color: effectiveTheme.textColor,
+                    fontFamily: effectiveTheme.fontFamily,
+                    textShadow: "0 1px 3px rgba(0,0,0,0.4)",
+                  }}
+                >
+                  {nextUp.slide.lines.join("\n") || " "}
+                </p>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Appearance (collapsible) */}
-        <div className="border-t border-red-500/20 flex-1 flex flex-col min-h-0">
-          <button
-            onClick={() => setShowAppearance(v => !v)}
-            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-accent/50 transition-colors shrink-0"
+        {/* End Show */}
+        <div className="mt-auto p-3 border-t border-border shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
+            onClick={endShow}
           >
-            <div className="flex items-center gap-2">
-              <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Adjust Appearance
-              </span>
-            </div>
-            {showAppearance ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </button>
-
-          {showAppearance && (
-            <div className="flex flex-col flex-1 min-h-0 border-t border-border">
-              <div className="flex border-b border-border shrink-0">
-                <button
-                  onClick={() => setAppearanceTab("text")}
-                  className={`flex-1 gap-1.5 px-2 py-2 text-[10px] font-medium flex items-center justify-center border-b-2 transition-colors ${
-                    appearanceTab === "text" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Type className="h-3 w-3" /> Text
-                </button>
-                <button
-                  onClick={() => setAppearanceTab("bg")}
-                  className={`flex-1 gap-1.5 px-2 py-2 text-[10px] font-medium flex items-center justify-center border-b-2 transition-colors ${
-                    appearanceTab === "bg" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <ImageIcon className="h-3 w-3" /> Background
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                {appearanceTab === "text" ? (
-                  <TextAdjust theme={effectiveTheme} onChange={(k, v) => setThemeOverrides(p => ({ ...p, [k]: v }))} />
-                ) : (
-                  <BgAdjust
-                    currentBg={effectiveBg ?? null}
-                    bgImages={bgImages}
-                    onChange={setBgOverride}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+            <MonitorOff className="h-3.5 w-3.5" /> End Show
+          </Button>
         </div>
       </div>
+
+      {/* Library modal */}
+      {showLibrary && (
+        <LibraryModal
+          onClose={() => setShowLibrary(false)}
+          onAdd={handleLibraryAdd}
+          excludeIds={liveSongs.map(s => s.songId)}
+        />
+      )}
     </div>
   )
 }
 
-// ── Pre-Live Idle State ─────────────────────────────────────────────────────
+// ── Quick Action Button ──────────────────────────────────────────────────────
+
+function QuickAction({
+  icon: Icon, label, tone, onClick,
+}: {
+  icon: typeof MonitorOff
+  label: string
+  tone?: "red"
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-xs text-foreground hover:bg-accent/50 transition-colors text-left"
+    >
+      <Icon className={`h-3.5 w-3.5 shrink-0 ${tone === "red" ? "text-destructive" : "text-muted-foreground"}`} />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+// ── Pre-Live Idle State ──────────────────────────────────────────────────────
 
 function PreLiveIdle({
   serviceLabel, songs, canGoLive, onStartLive,
+  displays, selectedDisplayId, onDisplayChange,
 }: {
   serviceLabel: string
   songs: LiveSong[]
   canGoLive: boolean
   onStartLive: () => void
+  displays: { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
+  selectedDisplayId: number | undefined
+  onDisplayChange: (id: number) => void
 }) {
   const totalSlides = songs.reduce((sum, s) => sum + s.slides.length, 0)
 
   return (
     <div className="h-full flex flex-col items-center justify-center bg-background text-foreground px-8">
       <div className="w-full max-w-md text-center">
-        {/* Status icon */}
         <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-5">
           <MonitorOff className="h-8 w-8 text-muted-foreground" />
         </div>
 
         <h1 className="text-2xl font-bold mb-2">Ready to go live</h1>
-        <p className="text-sm text-muted-foreground mb-1">
-          {serviceLabel}
-        </p>
-        <p className="text-xs text-muted-foreground mb-6">
+        <p className="text-sm text-muted-foreground mb-1">{serviceLabel}</p>
+        <p className="text-xs text-muted-foreground mb-4">
           The projection window is <span className="font-semibold">not open</span>.
-          Click below to start broadcasting.
+          Choose a display and click Go Live.
         </p>
 
-        {/* Stats */}
+        {/* Display picker */}
+        {displays.length > 0 && (
+          <div className="flex items-center gap-2 justify-center mb-5">
+            <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
+            <select
+              className="bg-card border border-border rounded-md px-3 py-1.5 text-xs text-foreground cursor-pointer"
+              value={selectedDisplayId ?? ""}
+              onChange={(e) => onDisplayChange(Number(e.target.value))}
+            >
+              {displays.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {canGoLive ? (
           <div className="rounded-lg border border-border bg-card p-4 mb-5 flex items-center gap-4 justify-center">
             <div className="text-center">
@@ -641,7 +783,6 @@ function PreLiveIdle({
           </div>
         )}
 
-        {/* Go Live button */}
         <Button
           size="lg"
           className="gap-2 bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
@@ -655,108 +796,6 @@ function PreLiveIdle({
         <p className="text-[10px] text-muted-foreground mt-5">
           This will open the projection window on your external display.
         </p>
-      </div>
-    </div>
-  )
-}
-
-// ── Live Clock ──────────────────────────────────────────────────────────────
-
-function LiveClock() {
-  const [time, setTime] = useState(new Date())
-  useEffect(() => {
-    const interval = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(interval)
-  }, [])
-  return (
-    <div className="flex items-center gap-3">
-      <Clock className="h-4 w-4 text-muted-foreground" />
-      <span className="text-xl font-mono font-bold text-foreground tabular-nums">
-        {time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-      </span>
-    </div>
-  )
-}
-
-// ── Inline appearance controls ──────────────────────────────────────────────
-
-const COLOR_SWATCHES = ["#ffffff", "#f5a623", "#4d8ef0", "#3ecf8e", "#f05252", "#9b59b6"]
-
-function TextAdjust({ theme, onChange }: {
-  theme: ThemeStyle
-  onChange: (k: keyof ThemeStyle, v: any) => void
-}) {
-  return (
-    <div className="p-3 space-y-3">
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Color</label>
-        <div className="flex gap-1.5">
-          {COLOR_SWATCHES.map(color => (
-            <button
-              key={color}
-              onClick={() => onChange("textColor", color)}
-              className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
-                theme.textColor === color ? "border-primary ring-2 ring-primary/30" : "border-border"
-              }`}
-              style={{ background: color }}
-            />
-          ))}
-        </div>
-      </div>
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Size</label>
-        <Input
-          className="h-7 text-xs"
-          value={theme.fontSize}
-          type="number"
-          min={12} max={120}
-          onChange={e => onChange("fontSize", Number(e.target.value) || 48)}
-        />
-      </div>
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Overlay</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="range"
-            className="flex-1 h-1 accent-primary"
-            min={0} max={100} step={5}
-            value={theme.overlayOpacity}
-            onChange={e => onChange("overlayOpacity", Number(e.target.value))}
-          />
-          <span className="text-[10px] text-muted-foreground w-8 text-right">{theme.overlayOpacity}%</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function BgAdjust({ currentBg, bgImages, onChange }: {
-  currentBg: string | null
-  bgImages: string[]
-  onChange: (path: string | null) => void
-}) {
-  return (
-    <div className="p-3">
-      <div className="grid grid-cols-3 gap-1.5">
-        <button
-          onClick={() => onChange(null)}
-          className={`rounded-md border aspect-video flex items-center justify-center text-[9px] text-muted-foreground transition-colors ${
-            !currentBg ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent"
-          }`}
-        >
-          None
-        </button>
-        {bgImages.map((img, i) => (
-          <button
-            key={i}
-            onClick={() => onChange(img)}
-            className={`rounded-md overflow-hidden border-2 aspect-video bg-gray-800 transition-all ${
-              currentBg === img ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"
-            }`}
-          >
-            <img src={`file://${img}`} className="w-full h-full object-cover" alt="" />
-          </button>
-        ))}
       </div>
     </div>
   )

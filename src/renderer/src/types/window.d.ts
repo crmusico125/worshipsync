@@ -67,7 +67,10 @@ declare global {
       }
       window: {
         getDisplayCount: () => Promise<number>
-        openProjection: () => void
+        getDisplays: () => Promise<
+          { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
+        >
+        openProjection: (displayId?: number) => void
         closeProjection: () => void
         onProjectionReady: (cb: () => void) => () => void
       }
