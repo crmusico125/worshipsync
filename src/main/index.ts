@@ -79,27 +79,56 @@ function createProjectionWindow(displayId?: number): void {
     projectionWindow?.show()
   })
 
+  projectionWindow.on('closed', () => {
+    projectionWindow = null
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    projectionWindow.loadURL(
-      `${process.env['ELECTRON_RENDERER_URL']}/projection.html`
-    )
+    const projUrl = `${process.env['ELECTRON_RENDERER_URL']}/projection.html`
+    console.log('[projection] loading URL:', projUrl)
+    projectionWindow.loadURL(projUrl)
   } else {
-    projectionWindow.loadFile(join(__dirname, '../renderer/projection.html'))
+    const projPath = join(__dirname, '../renderer/projection.html')
+    console.log('[projection] loading file:', projPath)
+    projectionWindow.loadFile(projPath)
   }
+
+  projectionWindow.webContents.on('did-finish-load', () => {
+    console.log('[projection] window loaded successfully')
+  })
+
+  projectionWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    console.error('[projection] failed to load:', code, desc)
+  })
 }
 
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.on('slide:show', (_event, payload) => {
-  projectionWindow?.webContents.send('slide:show', payload)
+  console.log('[ipc] slide:show received, projectionWindow exists:', !!projectionWindow, 'destroyed:', projectionWindow?.isDestroyed(), 'webContents loading:', projectionWindow?.webContents?.isLoading())
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:show', payload)
+    console.log('[ipc] slide:show forwarded to projection window')
+  } else {
+    console.warn('[ipc] slide:show NOT forwarded - no projection window')
+  }
 })
 
 ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
-  projectionWindow?.webContents.send('slide:blank', isBlank)
+  console.log('[ipc] slide:blank received:', isBlank, 'projectionWindow exists:', !!projectionWindow)
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:blank', isBlank)
+  }
 })
 
 ipcMain.on('slide:logo', (_event, show: boolean) => {
   projectionWindow?.webContents.send('slide:logo', show)
+})
+
+ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: boolean }) => {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:countdown', data)
+  }
 })
 
 ipcMain.on('projection:ready', () => {
@@ -254,16 +283,25 @@ ipcMain.handle('lineup:getForService', (_e, serviceDateId: number) => {
     .orderBy(asc(lineupItems.orderIndex))
     .all()
 
-  // Join with song + sections data
+  // Join with song + sections data (skip for countdown items)
   return items.map(item => {
+    // Ensure itemType is set (might be missing for rows created before migration)
+    const itemType = item.itemType || 'song'
+
+    if (itemType === 'countdown' || !item.songId) {
+      return { ...item, itemType: 'countdown', song: null }
+    }
     const song = db.select().from(songs)
       .where(eq(songs.id, item.songId))
       .get()
+    if (!song) {
+      return { ...item, itemType, song: null }
+    }
     const songSections = db.select().from(sections)
       .where(eq(sections.songId, item.songId))
       .orderBy(asc(sections.orderIndex))
       .all()
-    return { ...item, song: { ...song, sections: songSections } }
+    return { ...item, itemType, song: { ...song, sections: songSections } }
   })
 })
 
@@ -286,6 +324,22 @@ ipcMain.handle('lineup:addSong', (_e, serviceDateId: number, songId: number) => 
     songId,
     orderIndex,
     selectedSections
+  }).returning().all()
+
+  return item
+})
+
+ipcMain.handle('lineup:addCountdown', (_e, serviceDateId: number) => {
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const orderIndex = existing.length
+
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    orderIndex,
+    itemType: 'countdown',
+    selectedSections: '[]',
   }).returning().all()
 
   return item

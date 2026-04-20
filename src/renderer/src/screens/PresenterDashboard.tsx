@@ -2,8 +2,8 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import {
   MonitorOff, ChevronLeft, ChevronRight,
   Music, GripVertical, Pencil, Plus, Cast,
-  Play, AlertCircle, X, Type,
-  Tv, Hexagon, Image as ImageIcon,
+  Play, Square, AlertCircle, X, Type,
+  Tv, Hexagon, Image as ImageIcon, Timer,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useServiceStore } from "../store/useServiceStore"
@@ -21,6 +21,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number
+  itemType: 'song' | 'countdown'
   songId: number
   title: string
   artist: string
@@ -102,7 +103,7 @@ interface Props {
 }
 
 export default function PresenterDashboard({ projectionOpen, onProjectionChange, onExitLive }: Props) {
-  const { selectedService, lineup, loadLineup, addSongToLineup } = useServiceStore()
+  const { selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup } = useServiceStore()
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([])
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
@@ -117,6 +118,14 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   >([])
   const [selectedDisplayId, setSelectedDisplayId] = useState<number | undefined>(undefined)
   const slideGridRef = useRef<HTMLDivElement>(null)
+
+  // Countdown state
+  const [countdownRunning, setCountdownRunning] = useState(false)
+  const [countdownDisplay, setCountdownDisplay] = useState("00:00:00")
+  const [serviceTime, setServiceTime] = useState("11:00")
+  const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles")
+  const [projectionFontSize, setProjectionFontSize] = useState(48)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -137,11 +146,48 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
       all.forEach(t => { c[t.id] = t })
       setThemeCache(c)
     })
+    // Load service time settings
+    window.worshipsync.appState.get().then((state: Record<string, any>) => {
+      if (state.serviceTime) setServiceTime(state.serviceTime)
+      if (state.serviceTimezone) setServiceTimezone(state.serviceTimezone)
+      if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
+    }).catch(() => {})
   }, [])
 
   // ── Build live songs ─────────────────────────────────────────────────────
   useEffect(() => {
     const built: LiveSong[] = lineup.map(item => {
+      if (item.itemType === 'countdown') {
+        return {
+          lineupItemId: item.id,
+          itemType: 'countdown' as const,
+          songId: 0,
+          title: "Countdown Timer",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          themeId: null,
+          slides: [],
+        }
+      }
+
+      // Skip items with missing song data
+      if (!item.song) {
+        return {
+          lineupItemId: item.id,
+          itemType: 'song' as const,
+          songId: 0,
+          title: "Unknown",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          themeId: null,
+          slides: [],
+        }
+      }
+
       const selectedIds: number[] = JSON.parse(item.selectedSections || "[]")
       const filtered = selectedIds.length > 0
         ? item.song.sections.filter(s => selectedIds.includes(s.id))
@@ -159,6 +205,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
 
       return {
         lineupItemId: item.id,
+        itemType: 'song' as const,
         songId: item.song.id,
         title: item.song.title,
         artist: item.song.artist ?? "",
@@ -217,7 +264,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         backgroundPath: bg,
         theme: {
           fontFamily: theme.fontFamily,
-          fontSize: theme.fontSize,
+          fontSize: theme.fontSize !== DEFAULT_THEME.fontSize ? theme.fontSize : projectionFontSize,
           fontWeight: theme.fontWeight,
           textColor: theme.textColor,
           textAlign: theme.textAlign,
@@ -228,7 +275,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         },
       })
     }
-  }, [liveSongs, resolveTheme, resolveBg])
+  }, [liveSongs, resolveTheme, resolveBg, projectionFontSize])
 
   useEffect(() => { setActiveSlideIdx(-1) }, [selectedSongIdx])
 
@@ -271,6 +318,73 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const handleLibraryAdd = async (songIds: number[]) => {
     for (const id of songIds) await addSongToLineup(id)
   }
+
+  // ── Countdown ───────────────────────────────────────────────────────────
+  const getTargetTime = useCallback(() => {
+    // Build today's service time in the configured timezone
+    const now = new Date()
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: serviceTimezone }) // YYYY-MM-DD
+    return `${dateStr}T${serviceTime}:00`
+  }, [serviceTime, serviceTimezone])
+
+  const computeCountdownDisplay = useCallback(() => {
+    // Convert to timezone-aware target
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: serviceTimezone,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    })
+    // Get current time in the service timezone
+    const nowParts = formatter.formatToParts(new Date())
+    const getPart = (type: string) => nowParts.find(p => p.type === type)?.value ?? "0"
+    const nowInTz = new Date(`${getPart("year")}-${getPart("month")}-${getPart("day")}T${getPart("hour")}:${getPart("minute")}:${getPart("second")}`)
+    const targetInTz = new Date(`${new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone })}T${serviceTime}:00`)
+
+    const diff = targetInTz.getTime() - nowInTz.getTime()
+    if (diff <= 0) return "00:00:00"
+    const h = Math.floor(diff / 3600000)
+    const m = Math.floor((diff % 3600000) / 60000)
+    const s = Math.floor((diff % 60000) / 1000)
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+  }, [getTargetTime, serviceTimezone, serviceTime])
+
+  const startCountdown = useCallback(() => {
+    setCountdownRunning(true)
+    setIsBlank(false)
+    const targetTime = getTargetTime()
+
+    // Send initial state to projection
+    window.worshipsync.slide.logo(false)
+    window.worshipsync.slide.countdown({ targetTime, running: true })
+
+    // Update local display every second
+    const update = () => setCountdownDisplay(computeCountdownDisplay())
+    update()
+    countdownIntervalRef.current = setInterval(() => {
+      const display = computeCountdownDisplay()
+      setCountdownDisplay(display)
+      if (display === "00:00:00") {
+        stopCountdown()
+      }
+    }, 1000)
+  }, [getTargetTime, computeCountdownDisplay])
+
+  const stopCountdown = useCallback(() => {
+    setCountdownRunning(false)
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+    window.worshipsync.slide.countdown({ targetTime: "", running: false })
+    window.worshipsync.slide.blank(true)
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+    }
+  }, [])
 
   // ── Keyboard nav ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -383,6 +497,8 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i
+            const isCountdown = song.itemType === 'countdown'
+            const Icon = isCountdown ? Timer : Music
             return (
               <button
                 key={song.lineupItemId}
@@ -396,7 +512,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                 <div className={`w-7 h-7 rounded flex items-center justify-center shrink-0 ${
                   isCurrent ? "bg-primary text-primary-foreground" : "bg-input text-muted-foreground"
                 }`}>
-                  <Music className="h-3.5 w-3.5" />
+                  <Icon className="h-3.5 w-3.5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`text-[13px] font-medium truncate ${
@@ -405,7 +521,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                     {song.title}
                   </p>
                   <p className="text-[11px] text-muted-foreground truncate">
-                    Song{song.key && ` · Key: ${song.key}`}
+                    {isCountdown ? "Pre-Service Countdown" : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
                   </p>
                 </div>
                 <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -427,7 +543,45 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
 
       {/* ═════ CENTER: Slide Grid ═════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-        {currentSong ? (
+        {currentSong?.itemType === 'countdown' ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+            <Timer className="h-16 w-16 text-muted-foreground mb-6" />
+            <h2 className="text-lg font-bold mb-2">Countdown Timer</h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              Counting down to service at{" "}
+              <span className="font-semibold text-foreground">
+                {new Date(`2000-01-01T${serviceTime}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+              </span>
+            </p>
+
+            {/* Large timer display */}
+            <div className="rounded-2xl border border-border bg-card px-12 py-8 mb-8">
+              <span className="text-6xl font-mono font-bold tracking-wider text-foreground">
+                {countdownRunning ? countdownDisplay : computeCountdownDisplay()}
+              </span>
+            </div>
+
+            {/* Controls */}
+            <div className="flex items-center gap-3">
+              {!countdownRunning ? (
+                <Button size="lg" className="gap-2" onClick={startCountdown}>
+                  <Play className="h-5 w-5 fill-current" />
+                  Start Countdown
+                </Button>
+              ) : (
+                <Button size="lg" variant="destructive" className="gap-2" onClick={stopCountdown}>
+                  <Square className="h-4 w-4 fill-current" />
+                  Stop Countdown
+                </Button>
+              )}
+            </div>
+
+            <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
+              The countdown will be shown on the projection screen when started.
+              It stops automatically when it reaches zero.
+            </p>
+          </div>
+        ) : currentSong ? (
           <>
             {/* Song header */}
             <div className="px-5 py-3 border-b border-border bg-card flex justify-between items-center gap-4">
@@ -689,7 +843,8 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         <LibraryModal
           onClose={() => setShowLibrary(false)}
           onAdd={handleLibraryAdd}
-          excludeIds={liveSongs.map(s => s.songId)}
+          onAddCountdown={addCountdownToLineup}
+          excludeIds={liveSongs.filter(s => s.itemType === 'song').map(s => s.songId)}
         />
       )}
     </div>

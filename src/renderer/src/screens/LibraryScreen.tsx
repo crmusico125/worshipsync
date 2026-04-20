@@ -873,6 +873,17 @@ function PresentationStylePanel({ settings, onSettingsChange }: {
               ))}
             </Select>
           </Field>
+          <Field label={`Font Size (${settings.fontSize}px)`}>
+            <input
+              type="range"
+              min={24}
+              max={96}
+              step={2}
+              value={settings.fontSize}
+              onChange={(e) => update("fontSize", Number(e.target.value))}
+              className="w-full accent-primary"
+            />
+          </Field>
           <Field label="Text Color">
             <div className="flex gap-2 flex-wrap">
               {TEXT_COLORS.map((c) => (

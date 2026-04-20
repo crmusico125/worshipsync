@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Search, Music2 } from "lucide-react"
+import { Search, Music2, Timer } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -34,10 +34,11 @@ const SECTION_COLORS: Record<string, string> = {
 interface Props {
   onClose: () => void
   onAdd: (songIds: number[]) => void
+  onAddCountdown?: () => void
   excludeIds?: number[]
 }
 
-export default function LibraryModal({ onClose, onAdd, excludeIds = [] }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, excludeIds = [] }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -131,7 +132,7 @@ export default function LibraryModal({ onClose, onAdd, excludeIds = [] }: Props)
           <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0">
             <div className="px-5 border-b border-border shrink-0">
               <TabsList className="h-auto bg-transparent p-0 gap-0 rounded-none">
-                {["songs", "scriptures", "media", "presentations"].map((t) => (
+                {["songs", "scriptures", "media", "presentations", "widgets"].map((t) => (
                   <TabsTrigger
                     key={t}
                     value={t}
@@ -240,6 +241,26 @@ export default function LibraryModal({ onClose, onAdd, excludeIds = [] }: Props)
                     )}
                   </div>
                 </>
+              ) : tab === "widgets" ? (
+                <div className="flex-1 p-6">
+                  <div className="grid grid-cols-2 gap-4 max-w-lg">
+                    <button
+                      onClick={() => {
+                        onAddCountdown?.()
+                        onClose()
+                      }}
+                      className="flex flex-col items-center gap-3 p-6 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/30 transition-colors cursor-pointer group"
+                    >
+                      <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                        <Timer className="h-6 w-6 text-primary" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-medium text-foreground">Countdown Timer</p>
+                        <p className="text-xs text-muted-foreground mt-1">Count down to service start time</p>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
                   {tab === "scriptures" && <BookOpen className="h-8 w-8 opacity-30" />}

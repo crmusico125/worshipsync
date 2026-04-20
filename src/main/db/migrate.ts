@@ -41,7 +41,7 @@ export function runMigrations(): void {
     CREATE TABLE IF NOT EXISTS lineup_items (
       id                      INTEGER PRIMARY KEY AUTOINCREMENT,
       service_date_id         INTEGER NOT NULL REFERENCES service_dates(id) ON DELETE CASCADE,
-      song_id                 INTEGER NOT NULL REFERENCES songs(id),
+      song_id                 INTEGER REFERENCES songs(id),
       order_index             INTEGER NOT NULL DEFAULT 0,
       selected_sections       TEXT NOT NULL DEFAULT '[]',
       override_theme_id       INTEGER,
@@ -72,6 +72,42 @@ export function runMigrations(): void {
     CREATE INDEX IF NOT EXISTS idx_usage_song           ON song_usage(song_id);
     CREATE INDEX IF NOT EXISTS idx_usage_date           ON song_usage(service_date_id);
   `)
+
+  // ── Migration: make song_id nullable + add item_type column ─────────────
+  try {
+    const cols = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string; notnull: number }[]
+    const songIdCol = cols.find(c => c.name === 'song_id')
+    const hasItemType = cols.some(c => c.name === 'item_type')
+
+    if (songIdCol && songIdCol.notnull === 1) {
+      // Recreate table to make song_id nullable and add item_type
+      sqlite.exec(`
+        CREATE TABLE lineup_items_new (
+          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+          service_date_id          INTEGER NOT NULL REFERENCES service_dates(id) ON DELETE CASCADE,
+          song_id                  INTEGER REFERENCES songs(id),
+          item_type                TEXT NOT NULL DEFAULT 'song',
+          order_index              INTEGER NOT NULL DEFAULT 0,
+          selected_sections        TEXT NOT NULL DEFAULT '[]',
+          override_theme_id        INTEGER,
+          override_background_path TEXT
+        );
+        INSERT INTO lineup_items_new (id, service_date_id, song_id, item_type, order_index, selected_sections, override_theme_id, override_background_path)
+          SELECT id, service_date_id, song_id, ${hasItemType ? 'item_type' : "'song'"}, order_index, selected_sections, override_theme_id, override_background_path
+          FROM lineup_items;
+        DROP TABLE lineup_items;
+        ALTER TABLE lineup_items_new RENAME TO lineup_items;
+        CREATE INDEX IF NOT EXISTS idx_lineup_service_date ON lineup_items(service_date_id);
+        CREATE INDEX IF NOT EXISTS idx_lineup_song ON lineup_items(song_id);
+      `)
+      console.log('[db] migration: recreated lineup_items with nullable song_id and item_type')
+    } else if (!hasItemType) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN item_type TEXT NOT NULL DEFAULT 'song'`)
+      console.log('[db] migration: added item_type column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items):', e)
+  }
 
   console.log('[db] migrations complete')
 }

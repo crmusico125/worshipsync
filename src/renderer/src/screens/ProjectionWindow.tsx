@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { SlidePayload } from "../../../../shared/types";
 
-type DisplayState = "slide" | "blank" | "logo";
+type DisplayState = "slide" | "blank" | "logo" | "countdown";
 
 const DEFAULT_THEME = {
   fontFamily: "Montserrat, sans-serif",
@@ -18,7 +18,13 @@ const DEFAULT_THEME = {
 export default function ProjectionWindow() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
+  const [countdownTarget, setCountdownTarget] = useState<string>("");
+  const [countdownDisplay, setCountdownDisplay] = useState("00:00:00");
+  const [scaledFontSize, setScaledFontSize] = useState<number>(48);
   const cleanupRef = useRef<(() => void)[]>([]);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const lyricsTextRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -29,23 +35,92 @@ export default function ProjectionWindow() {
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
-      setDisplayState(isBlank ? "blank" : "slide");
+      setDisplayState((prev) => isBlank ? "blank" : prev === "countdown" ? "countdown" : "slide");
     });
 
     const cleanLogo = window.worshipsync.slide.onLogo((show) => {
-      setDisplayState(show ? "logo" : "slide");
+      setDisplayState((prev) => show ? "logo" : prev === "countdown" ? "countdown" : "slide");
     });
 
-    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo];
+    const cleanCountdown = window.worshipsync.slide.onCountdown((data) => {
+      if (data.running && data.targetTime) {
+        setCountdownTarget(data.targetTime);
+        setDisplayState("countdown");
+      } else {
+        setDisplayState("blank");
+        if (countdownRef.current) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+      }
+    });
+
+    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo, cleanCountdown];
 
     return () => {
       cleanupRef.current.forEach((fn) => fn());
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
+
+  // Countdown timer tick
+  useEffect(() => {
+    if (displayState !== "countdown" || !countdownTarget) return;
+
+    const tick = () => {
+      const target = new Date(countdownTarget).getTime();
+      const now = Date.now();
+      const diff = target - now;
+      if (diff <= 0) {
+        setCountdownDisplay("00:00:00");
+        return;
+      }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setCountdownDisplay(
+        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+      );
+    };
+
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+  }, [displayState, countdownTarget]);
 
   const theme = slide?.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
   const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
+
+  // Auto-scale font size to fit the container
+  const fitText = useCallback(() => {
+    const container = lyricsContainerRef.current;
+    const text = lyricsTextRef.current;
+    if (!container || !text) return;
+
+    const maxW = container.clientWidth;
+    const maxH = container.clientHeight;
+    let size = theme.fontSize;
+    const minSize = Math.max(20, theme.fontSize * 0.45);
+
+    text.style.fontSize = `${size}px`;
+    while (size > minSize && (text.scrollHeight > maxH || text.scrollWidth > maxW)) {
+      size -= 2;
+      text.style.fontSize = `${size}px`;
+    }
+    setScaledFontSize(size);
+  }, [theme.fontSize]);
+
+  useEffect(() => {
+    if (displayState === "slide" && slide) {
+      requestAnimationFrame(fitText);
+    }
+  }, [slide, displayState, fitText]);
 
   const alignItems =
     theme.textPosition === "top"
@@ -135,9 +210,52 @@ export default function ProjectionWindow() {
         </div>
       )}
 
+      {/* Countdown */}
+      {displayState === "countdown" && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            background: "#000",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "Montserrat, sans-serif",
+              fontSize: 18,
+              fontWeight: 500,
+              color: "rgba(255,255,255,0.4)",
+              letterSpacing: "0.15em",
+              textTransform: "uppercase",
+              marginBottom: 24,
+            }}
+          >
+            Service starts in
+          </div>
+          <div
+            style={{
+              fontFamily: "'Courier New', Courier, monospace",
+              fontSize: 120,
+              fontWeight: 700,
+              color: "#ffffff",
+              letterSpacing: "0.05em",
+              textShadow: "0 0 40px rgba(255,255,255,0.15)",
+            }}
+          >
+            {countdownDisplay}
+          </div>
+        </div>
+      )}
+
       {/* Lyrics */}
       {displayState === "slide" && slide && (
         <div
+          ref={lyricsContainerRef}
           style={{
             position: "absolute",
             inset: 0,
@@ -150,9 +268,10 @@ export default function ProjectionWindow() {
           }}
         >
           <div
+            ref={lyricsTextRef}
             style={{
               fontFamily: theme.fontFamily,
-              fontSize: theme.fontSize,
+              fontSize: scaledFontSize,
               fontWeight: theme.fontWeight,
               color: theme.textColor,
               textAlign: theme.textAlign,
@@ -181,7 +300,7 @@ export default function ProjectionWindow() {
             fontFamily: "monospace",
           }}
         >
-          {slide.slideIndex + 1}/{slide.totalSlides}
+          {(slide.slideIndex ?? 0) + 1}/{slide.totalSlides ?? 0}
         </div>
       )}
     </div>

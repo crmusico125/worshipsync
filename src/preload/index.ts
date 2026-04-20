@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     show: (payload: SlidePayload) => ipcRenderer.send('slide:show', payload),
     blank: (isBlank: boolean) => ipcRenderer.send('slide:blank', isBlank),
     logo: (show: boolean) => ipcRenderer.send('slide:logo', show),
+    countdown: (data: { targetTime: string; running: boolean }) => ipcRenderer.send('slide:countdown', data),
 
     onShow: (cb: (payload: SlidePayload) => void) => {
       ipcRenderer.on('slide:show', (_e, payload) => cb(payload))
@@ -18,6 +19,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     onLogo: (cb: (show: boolean) => void) => {
       ipcRenderer.on('slide:logo', (_e, show) => cb(show))
       return () => ipcRenderer.removeAllListeners('slide:logo')
+    },
+    onCountdown: (cb: (data: { targetTime: string; running: boolean }) => void) => {
+      ipcRenderer.on('slide:countdown', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('slide:countdown')
     }
   },
 
@@ -60,6 +65,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
   lineup: {
     getForService:  (serviceDateId: number)                    => ipcRenderer.invoke('lineup:getForService', serviceDateId),
     addSong:        (serviceDateId: number, songId: number)    => ipcRenderer.invoke('lineup:addSong', serviceDateId, songId),
+    addCountdown:   (serviceDateId: number)                    => ipcRenderer.invoke('lineup:addCountdown', serviceDateId),
     removeSong:     (lineupItemId: number)                     => ipcRenderer.invoke('lineup:removeSong', lineupItemId),
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>

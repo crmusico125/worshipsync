@@ -13,12 +13,13 @@ interface ServiceDate {
 interface LineupItemWithSong {
   id: number
   serviceDateId: number
-  songId: number
+  songId: number | null
+  itemType: 'song' | 'countdown'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
   overrideBackgroundPath: string | null
-  song: SongWithSections
+  song: SongWithSections | null
 }
 interface Theme {
   id: number
@@ -61,9 +62,11 @@ declare global {
         show: (payload: SlidePayload) => void
         blank: (isBlank: boolean) => void
         logo: (show: boolean) => void
+        countdown: (data: { targetTime: string; running: boolean }) => void
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
         onLogo: (cb: (show: boolean) => void) => () => void
+        onCountdown: (cb: (data: { targetTime: string; running: boolean }) => void) => () => void
       }
       window: {
         getDisplayCount: () => Promise<number>
@@ -97,6 +100,7 @@ declare global {
       lineup: {
         getForService:  (serviceDateId: number) => Promise<LineupItemWithSong[]>
         addSong:        (serviceDateId: number, songId: number) => Promise<unknown>
+        addCountdown:   (serviceDateId: number) => Promise<unknown>
         removeSong:     (lineupItemId: number) => Promise<boolean>
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>

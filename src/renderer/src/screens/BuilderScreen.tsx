@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react"
 import {
   Plus, BookOpen, ChevronUp, ChevronDown, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Type, Palette, Monitor,
+  Type, Palette, Monitor, Timer,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -95,7 +95,7 @@ interface Props {
 
 export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const {
-    selectedService, lineup, loadLineup, addSongToLineup,
+    selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
     removeSongFromLineup, toggleSection, loadServices, selectService,
     services, reorderLineup, updateStatus,
   } = useServiceStore()
@@ -341,12 +341,16 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             ) : (
               lineup.map((item, i) => {
                 const isSelected = selectedSongIdx === i
-                const itemSelectedIds: number[] = JSON.parse(item.selectedSections || "[]")
-                let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
-                if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
-                  try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
+                const isCountdown = item.itemType === 'countdown'
+                let slideCount = 0
+                if (!isCountdown && item.song) {
+                  const itemSelectedIds: number[] = JSON.parse(item.selectedSections || "[]")
+                  let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
+                  if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
+                    try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
+                  }
+                  slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
                 }
-                const slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
                 return (
                   <div
                     key={item.id}
@@ -367,12 +371,13 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                         <p className={`text-xs font-medium truncate ${
                           isSelected ? "text-primary" : "text-foreground"
                         }`}>
-                          {item.song.title}
+                          {isCountdown ? "Countdown Timer" : item.song?.title ?? "—"}
                         </p>
                         <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                          {item.song.artist || "Unknown"}
-                          {item.song.key && ` · ${item.song.key}`}
-                          {` · ${slideCount} slides`}
+                          {isCountdown
+                            ? "Pre-Service Countdown"
+                            : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
+                          }
                         </p>
                       </div>
                     </button>
@@ -402,7 +407,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                           className="h-6 w-6 text-muted-foreground hover:text-destructive"
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (confirm(`Remove "${item.song.title}" from lineup?`)) {
+                            const label = isCountdown ? "Countdown Timer" : item.song?.title ?? "item"
+                            if (confirm(`Remove "${label}" from lineup?`)) {
                               removeSongFromLineup(item.id)
                               if (selectedSongIdx >= lineup.length - 1) {
                                 setSelectedSongIdx(Math.max(0, lineup.length - 2))
@@ -441,7 +447,19 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
 
         {/* ─── CENTER: Song editor + sections ────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {currentSong ? (
+          {currentItem?.itemType === 'countdown' ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+              <Timer className="h-12 w-12 text-muted-foreground mb-4" />
+              <h2 className="text-base font-bold mb-1">Countdown Timer</h2>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                This countdown will count down to the service start time.
+                Configure the start time and timezone in Settings.
+              </p>
+              <p className="text-xs text-muted-foreground mt-3">
+                The countdown must be started manually in the Presenter screen to avoid accidental projection.
+              </p>
+            </div>
+          ) : currentSong ? (
             <>
               {/* Song header */}
               <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">
@@ -613,7 +631,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
         <LibraryModal
           onClose={() => setShowLibrary(false)}
           onAdd={handleLibraryAdd}
-          excludeIds={lineup.map(item => item.songId)}
+          onAddCountdown={addCountdownToLineup}
+          excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
         />
       )}
       {showAddSong && (

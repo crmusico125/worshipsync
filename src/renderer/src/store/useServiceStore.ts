@@ -13,7 +13,8 @@ interface ServiceDate {
 interface LineupItemWithSong {
   id: number
   serviceDateId: number
-  songId: number
+  songId: number | null
+  itemType: 'song' | 'countdown'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
@@ -28,7 +29,7 @@ interface LineupItemWithSong {
     backgroundPath: string | null
     themeId: number | null
     sections: { id: number; songId: number; type: string; label: string; lyrics: string; orderIndex: number }[]
-  }
+  } | null
 }
 
 interface ServiceStore {
@@ -45,6 +46,7 @@ interface ServiceStore {
 
   loadLineup: (serviceDateId: number) => Promise<void>
   addSongToLineup: (songId: number) => Promise<void>
+  addCountdownToLineup: () => Promise<void>
   removeSongFromLineup: (lineupItemId: number) => Promise<void>
   toggleSection: (lineupItemId: number, sectionId: number, included: boolean) => Promise<void>
   reorderLineup: (orderedIds: number[]) => Promise<void>
@@ -97,6 +99,16 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     await window.worshipsync.lineup.addSong(selectedService.id, songId)
     await get().loadLineup(selectedService.id)
     // Auto-update status to in-progress
+    if (selectedService.status === 'empty') {
+      await get().updateStatus(selectedService.id, 'in-progress')
+    }
+  },
+
+  addCountdownToLineup: async () => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addCountdown(selectedService.id)
+    await get().loadLineup(selectedService.id)
     if (selectedService.status === 'empty') {
       await get().updateStatus(selectedService.id, 'in-progress')
     }
