@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import ScriptureBrowser from "./ScriptureBrowser"
+import ScriptureBrowser, { type ScriptureVerse } from "./ScriptureBrowser"
 
 interface SongRow {
   id: number
@@ -35,7 +35,7 @@ interface Props {
   onClose: () => void
   onAdd: (songIds: number[]) => void
   onAddCountdown?: () => void
-  onAddScripture?: (title: string, text: string) => void
+  onAddScripture?: (title: string, verses: ScriptureVerse[], ref: { book: string; chapter: number; translation: string }) => void
   excludeIds?: number[]
 }
 
@@ -269,8 +269,8 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
               ) : tab === "scriptures" ? (
                 <ScriptureBrowser
                   search={search}
-                  onAddScripture={(title, text) => {
-                    onAddScripture?.(title, text)
+                  onAddScripture={(title, verses, ref) => {
+                    onAddScripture?.(title, verses, ref)
                     onClose()
                   }}
                 />

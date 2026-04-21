@@ -28,9 +28,14 @@ interface VerseContent {
   content?: (string | { noteId: number })[]
 }
 
+export interface ScriptureVerse {
+  number: number
+  text: string
+}
+
 interface Props {
   search: string
-  onAddScripture: (title: string, text: string) => void
+  onAddScripture: (title: string, verses: ScriptureVerse[], ref: { book: string; chapter: number; translation: string }) => void
 }
 
 // ── Book abbreviation aliases ────────────────────────────────────────────────
@@ -303,14 +308,20 @@ export default function ScriptureBrowser({ search, onAddScripture }: Props) {
       ? `${activeBook.name} ${activeChapter}${startVerse !== null ? `:${startVerse}${endVerse && endVerse !== startVerse ? `-${endVerse}` : ""}` : ""}`
       : null
 
-  const selectedText =
+  const selectedVerses =
     startVerse !== null
-      ? verses.filter((v) => isSelected(v.number)).map((v) => v.text).join(" ")
-      : ""
+      ? verses.filter((v) => isSelected(v.number))
+      : []
+
+  const selectedText = selectedVerses.map((v) => v.text).join(" ")
 
   const handleAdd = () => {
-    if (!refLabel || !selectedText) return
-    onAddScripture(`${refLabel} (${selectedTranslation})`, selectedText)
+    if (!refLabel || !activeBook || !activeChapter || selectedVerses.length === 0) return
+    onAddScripture(
+      `${refLabel} (${selectedTranslation})`,
+      selectedVerses,
+      { book: activeBook.name, chapter: activeChapter, translation: selectedTranslation }
+    )
   }
 
   // ── Click handlers ─────────────────────────────────────────────────────────

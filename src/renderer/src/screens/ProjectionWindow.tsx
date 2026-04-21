@@ -287,6 +287,27 @@ export default function ProjectionWindow() {
         </div>
       )}
 
+      {/* Scripture reference */}
+      {displayState === "slide" && slide && slide.artist === "Scripture" && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 48,
+            left: 0,
+            right: 0,
+            zIndex: 3,
+            textAlign: "center",
+            fontSize: 20,
+            fontFamily: theme.fontFamily,
+            fontWeight: "500",
+            color: "rgba(255,255,255,0.5)",
+            letterSpacing: "0.02em",
+          }}
+        >
+          {slide.sectionLabel}
+        </div>
+      )}
+
       {/* Slide counter */}
       {displayState === "slide" && slide && (
         <div

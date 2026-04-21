@@ -204,12 +204,22 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     for (const id of songIds) await addSongToLineup(id)
   }
 
-  const handleAddScripture = async (title: string, text: string) => {
+  const handleAddScripture = async (
+    title: string,
+    verses: { number: number; text: string }[],
+    ref: { book: string; chapter: number; translation: string }
+  ) => {
+    const sections = verses.map((v, i) => ({
+      type: "verse" as const,
+      label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
+      lyrics: v.text,
+      orderIndex: i,
+    }))
     const song = await window.worshipsync.songs.create({
       title,
       artist: "Scripture",
       tags: "",
-      sections: [{ type: "verse", label: "Scripture", lyrics: text, orderIndex: 0 }],
+      sections,
     })
     await loadSongs()
     await addSongToLineup(song.id)
