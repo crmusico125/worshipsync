@@ -26,7 +26,7 @@ export default function ProjectionWindow() {
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lyricsTextRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const pendingVideoAction = useRef<'play' | 'pause' | 'stop' | null>(null);
+  const pendingVideoAction = useRef<"play" | "pause" | "stop" | null>(null);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -37,11 +37,15 @@ export default function ProjectionWindow() {
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
-      setDisplayState((prev) => isBlank ? "blank" : prev === "countdown" ? "countdown" : "slide");
+      setDisplayState((prev) =>
+        isBlank ? "blank" : prev === "countdown" ? "countdown" : "slide",
+      );
     });
 
     const cleanLogo = window.worshipsync.slide.onLogo((show) => {
-      setDisplayState((prev) => show ? "logo" : prev === "countdown" ? "countdown" : "slide");
+      setDisplayState((prev) =>
+        show ? "logo" : prev === "countdown" ? "countdown" : "slide",
+      );
     });
 
     const cleanCountdown = window.worshipsync.slide.onCountdown((data) => {
@@ -65,16 +69,22 @@ export default function ProjectionWindow() {
         return;
       }
       pendingVideoAction.current = null;
-      if (action === 'play') vid.play();
-      else if (action === 'pause') vid.pause();
-      else if (action === 'stop') {
+      if (action === "play") vid.play();
+      else if (action === "pause") vid.pause();
+      else if (action === "stop") {
         vid.pause();
         vid.currentTime = 0;
         setDisplayState("blank");
       }
     });
 
-    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo, cleanCountdown, cleanVideo];
+    cleanupRef.current = [
+      cleanSlide,
+      cleanBlank,
+      cleanLogo,
+      cleanCountdown,
+      cleanVideo,
+    ];
 
     return () => {
       cleanupRef.current.forEach((fn) => fn());
@@ -98,7 +108,7 @@ export default function ProjectionWindow() {
       const m = Math.floor((diff % 3600000) / 60000);
       const s = Math.floor((diff % 60000) / 1000);
       setCountdownDisplay(
-        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
       );
     };
 
@@ -114,16 +124,20 @@ export default function ProjectionWindow() {
 
   // Apply pending video action once the video element mounts
   useEffect(() => {
-    if (displayState === "slide" && slide?.backgroundPath && pendingVideoAction.current) {
+    if (
+      displayState === "slide" &&
+      slide?.backgroundPath &&
+      pendingVideoAction.current
+    ) {
       if (/\.(mp4|webm|mov)$/i.test(slide.backgroundPath)) {
         requestAnimationFrame(() => {
           const vid = videoRef.current;
           if (vid && pendingVideoAction.current) {
             const action = pendingVideoAction.current;
             pendingVideoAction.current = null;
-            if (action === 'play') vid.play();
-            else if (action === 'pause') vid.pause();
-            else if (action === 'stop') {
+            if (action === "play") vid.play();
+            else if (action === "pause") vid.pause();
+            else if (action === "stop") {
               vid.pause();
               vid.currentTime = 0;
               setDisplayState("blank");
@@ -150,7 +164,10 @@ export default function ProjectionWindow() {
     const minSize = Math.max(20, theme.fontSize * 0.45);
 
     text.style.fontSize = `${size}px`;
-    while (size > minSize && (text.scrollHeight > maxH || text.scrollWidth > maxW)) {
+    while (
+      size > minSize &&
+      (text.scrollHeight > maxH || text.scrollWidth > maxW)
+    ) {
       size -= 2;
       text.style.fontSize = `${size}px`;
     }
@@ -183,8 +200,9 @@ export default function ProjectionWindow() {
       }}
     >
       {/* Background */}
-      {displayState === "slide" && backgroundPath && (
-        backgroundPath.startsWith("color:") ? (
+      {displayState === "slide" &&
+        backgroundPath &&
+        (backgroundPath.startsWith("color:") ? (
           <div
             style={{
               position: "absolute",
@@ -197,7 +215,6 @@ export default function ProjectionWindow() {
           <video
             ref={videoRef}
             key={backgroundPath}
-            loop
             playsInline
             style={{
               position: "absolute",
@@ -220,8 +237,7 @@ export default function ProjectionWindow() {
               backgroundPosition: "center",
             }}
           />
-        )
-      )}
+        ))}
 
       {/* Dark overlay */}
       {displayState === "slide" && (
@@ -237,7 +253,14 @@ export default function ProjectionWindow() {
 
       {/* Blank screen */}
       {displayState === "blank" && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "#000" }} />
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            background: "#000",
+          }}
+        />
       )}
 
       {/* Logo screen */}
