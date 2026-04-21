@@ -188,6 +188,7 @@ export default function ProjectionWindow() {
         : "center";
 
   const backgroundPath = slide?.backgroundPath;
+  const isVideo = backgroundPath && /\.(mp4|webm|mov)$/i.test(backgroundPath);
 
   return (
     <div
@@ -240,7 +241,7 @@ export default function ProjectionWindow() {
         ))}
 
       {/* Dark overlay */}
-      {displayState === "slide" && (
+      {displayState === "slide" && !isVideo && (
         <div
           style={{
             position: "absolute",
