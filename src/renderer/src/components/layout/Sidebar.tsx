@@ -1,41 +1,47 @@
-import React from "react"
-import type { AppScreen } from "../../../../../shared/types"
+import React from "react";
+import type { AppScreen } from "../../../../../shared/types";
 import {
-  Calendar, Wrench, Palette, MonitorPlay, BarChart3, Settings, Church, Music, Image,
-} from "lucide-react"
+  Calendar,
+  Wrench,
+  Palette,
+  MonitorPlay,
+  BarChart3,
+  Settings,
+  Church,
+  Music,
+  Image,
+} from "lucide-react";
 
 interface Props {
-  current: AppScreen
-  onChange: (screen: AppScreen) => void
-  projectionOpen: boolean
-  onGoLive: () => void
-  canGoLive: boolean
+  current: AppScreen;
+  onChange: (screen: AppScreen) => void;
+  projectionOpen: boolean;
+  onGoLive: () => void;
+  canGoLive: boolean;
 }
 
 interface NavItem {
-  id: AppScreen
-  icon: typeof Calendar
-  label: string
+  id: AppScreen;
+  icon: typeof Calendar;
+  label: string;
 }
 
 const NAV_TOP: NavItem[] = [
   { id: "presenter", icon: MonitorPlay, label: "Presenter" },
-  { id: "planner",   icon: Calendar,    label: "Planner" },
-  { id: "builder",   icon: Wrench,      label: "Builder" },
-  { id: "library",   icon: Music,       label: "Library" },
-  { id: "media",     icon: Image,       label: "Media" },
-  { id: "themes",    icon: Palette,     label: "Themes" },
-  { id: "analytics", icon: BarChart3,   label: "Analytics" },
-]
+  { id: "planner", icon: Calendar, label: "Planner" },
+  { id: "builder", icon: Wrench, label: "Builder" },
+  { id: "library", icon: Music, label: "Library" },
+  { id: "media", icon: Image, label: "Media" },
+  { id: "themes", icon: Palette, label: "Themes" },
+  { id: "analytics", icon: BarChart3, label: "Analytics" },
+];
 
-export default function Sidebar({
-  current, onChange, projectionOpen,
-}: Props) {
+export default function Sidebar({ current, onChange, projectionOpen }: Props) {
   return (
     <nav className="w-[64px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
       {/* Draggable logo area */}
       <div
-        className="w-full flex items-center justify-center py-4 text-sidebar-foreground"
+        className="w-full flex items-center justify-center pt-12 pb-4 text-sidebar-foreground"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <Church className="h-6 w-6" />
@@ -47,9 +53,9 @@ export default function Sidebar({
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {NAV_TOP.map((item) => {
-          const isActive = current === item.id
-          const isPresenter = item.id === "presenter"
-          const Icon = item.icon
+          const isActive = current === item.id;
+          const isPresenter = item.id === "presenter";
+          const Icon = item.icon;
           return (
             <button
               key={item.id}
@@ -65,7 +71,7 @@ export default function Sidebar({
             >
               <Icon className="h-5 w-5" />
             </button>
-          )
+          );
         })}
       </div>
 
@@ -84,5 +90,5 @@ export default function Sidebar({
         </button>
       </div>
     </nav>
-  )
+  );
 }
