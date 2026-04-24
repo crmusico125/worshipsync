@@ -192,6 +192,10 @@ export default function PresenterDashboard({
   const [waveformBars, setWaveformBars] = useState<number[]>(new Array(48).fill(0));
   const [serviceTime, setServiceTime] = useState("11:00");
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles");
+  const [serviceSchedules, setServiceSchedules] = useState<Array<{
+    id: string; dayOfWeek: number; startTime: string; endTime: string;
+    label: string; timezone?: string;
+  }>>([]);
   const [projectionFontSize, setProjectionFontSize] = useState(48);
   const [churchName, setChurchName] = useState("");
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -225,11 +229,11 @@ export default function PresenterDashboard({
     window.worshipsync.appState
       .get()
       .then((state: Record<string, any>) => {
-        if (state.serviceTime) setServiceTime(state.serviceTime);
-        if (state.serviceTimezone) setServiceTimezone(state.serviceTimezone);
-        if (state.projectionFontSize)
-          setProjectionFontSize(state.projectionFontSize);
-        if (state.churchName) setChurchName(state.churchName);
+        if (state.serviceTime)      setServiceTime(state.serviceTime);
+        if (state.serviceTimezone)  setServiceTimezone(state.serviceTimezone);
+        if (state.serviceSchedules) setServiceSchedules(state.serviceSchedules);
+        if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize);
+        if (state.churchName)       setChurchName(state.churchName);
       })
       .catch(() => {});
   }, []);
@@ -474,20 +478,32 @@ export default function PresenterDashboard({
   };
 
   // ── Countdown ───────────────────────────────────────────────────────────
+  // Resolve the timezone for the current service: match day-of-week to a saved schedule,
+  // fall back to the global serviceTimezone setting.
+  const getEffectiveTz = useCallback(() => {
+    if (selectedService?.date && serviceSchedules.length > 0) {
+      const dow = new Date(selectedService.date + "T12:00:00").getDay();
+      const match = serviceSchedules.find((s) => s.dayOfWeek === dow);
+      if (match?.timezone) return match.timezone;
+    }
+    return serviceTimezone;
+  }, [selectedService, serviceSchedules, serviceTimezone]);
+
   const getTargetTime = useCallback(() => {
-    // Use the actual service date from the lineup, combined with the configured start time
-    const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone });
+    const tz = getEffectiveTz();
+    const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA", { timeZone: tz });
     return `${dateStr}T${serviceTime}:00`;
-  }, [serviceTime, serviceTimezone, selectedService]);
+  }, [serviceTime, getEffectiveTz, selectedService]);
 
   const computeCountdownDisplay = useCallback(() => {
+    const tz = getEffectiveTz();
     const targetStr = selectedService?.date
       ? `${selectedService.date}T${serviceTime}:00`
-      : `${new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone })}T${serviceTime}:00`;
+      : `${new Date().toLocaleDateString("en-CA", { timeZone: tz })}T${serviceTime}:00`;
 
     // Get current time expressed in the service timezone so the diff is timezone-correct
     const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: serviceTimezone,
+      timeZone: tz,
       year: "numeric", month: "2-digit", day: "2-digit",
       hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     });
@@ -506,7 +522,7 @@ export default function PresenterDashboard({
     return d > 0
       ? `${pad(d)}d ${pad(h)}:${pad(m)}:${pad(s)}`
       : `${pad(h)}:${pad(m)}:${pad(s)}`;
-  }, [serviceTime, serviceTimezone, selectedService]);
+  }, [serviceTime, getEffectiveTz, selectedService]);
 
   const startCountdown = useCallback(() => {
     setCountdownRunning(true);
@@ -804,6 +820,17 @@ export default function PresenterDashboard({
                   "en-US",
                   { hour: "numeric", minute: "2-digit", hour12: true },
                 )}
+              </span>
+              {" "}
+              <span className="text-xs font-medium bg-muted rounded px-1.5 py-0.5">
+                {(() => {
+                  const tz = getEffectiveTz();
+                  try {
+                    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
+                      .formatToParts(new Date())
+                      .find((p) => p.type === "timeZoneName")?.value ?? tz;
+                  } catch { return tz; }
+                })()}
               </span>
             </p>
 

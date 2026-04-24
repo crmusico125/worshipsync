@@ -32,6 +32,25 @@ interface Display {
   isPrimary: boolean
 }
 
+interface ServiceSchedule {
+  id: string
+  dayOfWeek: number
+  startTime: string
+  endTime: string
+  label: string
+  timezone?: string
+}
+
+function getTzAbbr(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((p) => p.type === "timeZoneName")?.value ?? tz
+  } catch {
+    return tz
+  }
+}
+
 interface Props {
   onGoLive: (serviceId: number) => void
   onOpenBuilder: (serviceId: number) => void
@@ -55,6 +74,8 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: 
   const [mediaCount, setMediaCount] = useState(0)
   const [displays, setDisplays] = useState<Display[]>([])
   const [serviceTime, setServiceTime] = useState("11:00")
+  const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles")
+  const [serviceSchedules, setServiceSchedules] = useState<ServiceSchedule[]>([])
 
   useEffect(() => {
     const tick = setInterval(() => setNow(new Date()), 1000)
@@ -67,7 +88,9 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: 
     window.worshipsync.backgrounds.listImages().then((m) => setMediaCount(m.length)).catch(() => {})
     window.worshipsync.window.getDisplays().then(setDisplays as any).catch(() => {})
     window.worshipsync.appState.get().then((state: any) => {
-      if (state.serviceTime) setServiceTime(state.serviceTime)
+      if (state.serviceTime)      setServiceTime(state.serviceTime)
+      if (state.serviceTimezone)  setServiceTimezone(state.serviceTimezone)
+      if (state.serviceSchedules) setServiceSchedules(state.serviceSchedules)
     }).catch(() => {})
   }, [])
 
@@ -89,11 +112,20 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: 
     " · " +
     now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })
 
+  // Match next service's day-of-week to a saved schedule to get its timezone
+  const effectiveTz = (() => {
+    if (!nextService) return serviceTimezone
+    const dow = new Date(nextService.date + "T12:00:00").getDay()
+    return serviceSchedules.find((s) => s.dayOfWeek === dow)?.timezone ?? serviceTimezone
+  })()
+
   const displayTime = serviceTime
     ? new Date(`2000-01-01T${serviceTime}`).toLocaleTimeString("en-US", {
         hour: "numeric", minute: "2-digit", hour12: true,
       })
     : ""
+
+  const tzAbbr = getTzAbbr(effectiveTz)
 
   const nextDate = nextService ? new Date(nextService.date + "T00:00:00") : null
   const nextMonth = nextDate?.toLocaleDateString("en-US", { month: "short" }).toUpperCase() ?? ""
@@ -152,6 +184,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: 
                   <div className="flex items-center gap-4 mt-2">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Clock className="h-3.5 w-3.5" />{displayTime}
+                      <span className="text-[10px] font-medium bg-muted rounded px-1.5 py-0.5">{tzAbbr}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <ListOrdered className="h-3.5 w-3.5" />
