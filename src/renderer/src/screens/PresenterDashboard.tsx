@@ -27,6 +27,7 @@ import {
   Film,
   Volume2,
   Pause,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore } from "../store/useServiceStore";
@@ -834,14 +835,133 @@ export default function PresenterDashboard({
               It stops automatically when it reaches zero.
             </p>
           </div>
+        ) : currentSong?.artist === "Media" && /\.(mp4|webm|mov)$/i.test(resolveBg(currentSong) ?? "") ? (
+          /* ── Video media — full-panel layout ── */
+          (() => {
+            const bg = resolveBg(currentSong)!
+            const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0
+            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+            const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO"
+
+            const stopVideo = () => {
+              window.worshipsync.slide.videoControl("stop")
+              if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0 }
+              setVideoPlaying(false); setVideoCurrentTime(0); setIsBlank(true)
+              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
+            }
+
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+              if (!videoDuration) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              const seekTo = ((e.clientX - rect.left) / rect.width) * videoDuration
+              if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo
+              setVideoCurrentTime(seekTo)
+              window.worshipsync.slide.videoSeek(seekTo)
+            }
+
+            const handlePlay = () => {
+              const preview = videoPreviewRef.current
+              const dur = preview?.duration ?? 0
+              setVideoDuration(dur); setVideoCurrentTime(0)
+              sendSlide(selectedSongIdx, 0)
+              window.worshipsync.slide.videoControl("play")
+              preview?.play()
+              setVideoPlaying(true)
+              if (videoTimerRef.current) clearInterval(videoTimerRef.current)
+              videoTimerRef.current = setInterval(() => {
+                setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0)
+              }, 100)
+            }
+
+            const handlePause = () => {
+              window.worshipsync.slide.videoControl("pause")
+              videoPreviewRef.current?.pause()
+              setVideoPlaying(false)
+              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
+            }
+
+            return (
+              <>
+                {/* Header */}
+                <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                  <div className="min-w-0">
+                    <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                      <span>Video</span>
+                      <span>·</span>
+                      <span className="tabular-nums">{fmt(videoDuration)}</span>
+                      <span>·</span>
+                      <span>{ext}</span>
+                    </div>
+                  </div>
+                  <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
+                    <RefreshCw className="h-3.5 w-3.5" /> Replace
+                  </Button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
+                  <div className="w-full max-w-3xl flex flex-col gap-4">
+
+                    {/* Video preview */}
+                    <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
+                      <video
+                        ref={videoPreviewRef}
+                        src={`file://${encodeURI(bg)}`}
+                        className="w-full h-full object-cover"
+                        muted playsInline preload="metadata"
+                        onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)}
+                        onEnded={stopVideo}
+                      />
+
+                      {/* Play/Pause overlay */}
+                      <button
+                        onClick={videoPlaying ? handlePause : handlePlay}
+                        className="absolute inset-0 flex items-center justify-center group"
+                      >
+                        {!videoPlaying && (
+                          <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
+                            <Play className="h-8 w-8 text-white fill-white ml-1" />
+                          </div>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(videoCurrentTime)}</span>
+                      <div
+                        className="flex-1 relative flex items-center cursor-pointer py-2"
+                        onClick={handleSeek}
+                      >
+                        <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                          <div
+                            className="absolute left-0 top-0 h-full bg-primary rounded-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2"
+                            style={{ left: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(videoDuration)}</span>
+                    </div>
+
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Preview plays here (muted) · Audio plays on the projection screen
+                    </p>
+                  </div>
+                </div>
+              </>
+            )
+          })()
         ) : currentSong?.artist === "Media" ? (
+          /* ── Audio / Image media — centered layout ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             {(() => {
               const bg = resolveBg(currentSong);
-              const isVideo = bg ? /\.(mp4|webm|mov)$/i.test(bg) : false;
-              const isAudio = bg
-                ? /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(bg)
-                : false;
+              const isAudio = bg ? /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(bg) : false;
 
               if (isAudio && bg) {
                 const formatTime = (s: number) => {
@@ -851,304 +971,85 @@ export default function PresenterDashboard({
                 };
                 return (
                   <>
-                    {/* Audio icon */}
-                    <div
-                      className="rounded-2xl border border-border bg-card w-full max-w-lg mb-6 flex items-center justify-center"
-                      style={{ aspectRatio: "16/9" }}
-                    >
+                    <div className="rounded-2xl border border-border bg-card w-full max-w-lg mb-6 flex items-center justify-center" style={{ aspectRatio: "16/9" }}>
                       <Volume2 className="h-20 w-20 text-muted-foreground" />
                     </div>
-
-                    <h2 className="text-lg font-bold mb-1">
-                      {currentSong.title}
-                    </h2>
-                    <p className="text-sm text-muted-foreground mb-6">
-                      Audio · Use controls below to play locally
-                    </p>
-
-                    {/* Progress bar */}
+                    <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
+                    <p className="text-sm text-muted-foreground mb-6">Audio · Use controls below to play locally</p>
                     <div className="w-full max-w-md mb-3">
-                      <div
-                        className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
+                      <div className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
                         onClick={(e) => {
                           if (!audioRef.current || !audioDuration) return;
                           const rect = e.currentTarget.getBoundingClientRect();
-                          const ratio = (e.clientX - rect.left) / rect.width;
-                          audioRef.current.currentTime = ratio * audioDuration;
+                          audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration;
                         }}
                       >
-                        <div
-                          className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
-                          style={{
-                            width: `${audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0}%`,
-                          }}
-                        />
+                        <div className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
+                          style={{ width: `${audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0}%` }} />
                       </div>
                       <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
                         <span>{formatTime(audioCurrentTime)}</span>
                         <span>{formatTime(audioDuration)}</span>
                       </div>
                     </div>
-
-                    {/* Controls */}
                     <div className="flex items-center gap-3">
                       {!audioPlaying ? (
-                        <Button
-                          size="lg"
-                          className="gap-2"
-                          onClick={() => {
-                            if (!audioRef.current) {
-                              audioRef.current = new Audio(
-                                `file://${encodeURI(bg)}`,
-                              );
-                              audioRef.current.onloadedmetadata = () => {
-                                setAudioDuration(
-                                  audioRef.current?.duration ?? 0,
-                                );
-                              };
-                              audioRef.current.onended = () => {
-                                setAudioPlaying(false);
-                                setAudioCurrentTime(0);
-                                if (audioTimerRef.current) {
-                                  clearInterval(audioTimerRef.current);
-                                  audioTimerRef.current = null;
-                                }
-                              };
-                            }
-                            audioRef.current.play();
-                            setAudioPlaying(true);
-                            audioTimerRef.current = setInterval(() => {
-                              setAudioCurrentTime(
-                                audioRef.current?.currentTime ?? 0,
-                              );
-                            }, 250);
-                          }}
-                        >
-                          <Play className="h-5 w-5 fill-current" />
-                          Play Audio
+                        <Button size="lg" className="gap-2" onClick={() => {
+                          if (!audioRef.current) {
+                            audioRef.current = new Audio(`file://${encodeURI(bg)}`);
+                            audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
+                            audioRef.current.onended = () => {
+                              setAudioPlaying(false); setAudioCurrentTime(0);
+                              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                            };
+                          }
+                          audioRef.current.play();
+                          setAudioPlaying(true);
+                          audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 250);
+                        }}>
+                          <Play className="h-5 w-5 fill-current" /> Play Audio
                         </Button>
                       ) : (
                         <>
-                          <Button
-                            size="lg"
-                            variant="outline"
-                            className="gap-2"
-                            onClick={() => {
-                              audioRef.current?.pause();
-                              setAudioPlaying(false);
-                              if (audioTimerRef.current) {
-                                clearInterval(audioTimerRef.current);
-                                audioTimerRef.current = null;
-                              }
-                            }}
-                          >
-                            <Pause className="h-5 w-5" />
-                            Pause
+                          <Button size="lg" variant="outline" className="gap-2" onClick={() => {
+                            audioRef.current?.pause(); setAudioPlaying(false);
+                            if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                          }}>
+                            <Pause className="h-5 w-5" /> Pause
                           </Button>
-                          <Button
-                            size="lg"
-                            variant="destructive"
-                            className="gap-2"
-                            onClick={() => {
-                              if (audioRef.current) {
-                                audioRef.current.pause();
-                                audioRef.current.currentTime = 0;
-                              }
-                              setAudioPlaying(false);
-                              setAudioCurrentTime(0);
-                              if (audioTimerRef.current) {
-                                clearInterval(audioTimerRef.current);
-                                audioTimerRef.current = null;
-                              }
-                            }}
-                          >
-                            <Square className="h-4 w-4 fill-current" />
-                            Stop
+                          <Button size="lg" variant="destructive" className="gap-2" onClick={() => {
+                            if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+                            setAudioPlaying(false); setAudioCurrentTime(0);
+                            if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                          }}>
+                            <Square className="h-4 w-4 fill-current" /> Stop
                           </Button>
                         </>
                       )}
                     </div>
-
-                    <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
-                      Audio plays through this computer only. Nothing is shown
-                      on the projection screen.
-                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">Audio plays through this computer only. Nothing is shown on the projection screen.</p>
                   </>
                 );
               }
 
-              const formatTime = (s: number) => {
-                const m = Math.floor(s / 60);
-                const sec = Math.floor(s % 60);
-                return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-              };
-
-              const stopVideo = () => {
-                window.worshipsync.slide.videoControl("stop");
-                if (videoPreviewRef.current) {
-                  videoPreviewRef.current.pause();
-                  videoPreviewRef.current.currentTime = 0;
-                }
-                setVideoPlaying(false);
-                setVideoCurrentTime(0);
-                setIsBlank(true);
-                if (videoTimerRef.current) {
-                  clearInterval(videoTimerRef.current);
-                  videoTimerRef.current = null;
-                }
-              };
-
+              // Image
               return (
                 <>
-                  {/* Media preview */}
-                  <div
-                    className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg"
-                    style={{ aspectRatio: "16/9" }}
-                  >
-                    {bg && isVideo ? (
-                      <video
-                        ref={videoPreviewRef}
-                        src={`file://${encodeURI(bg)}`}
-                        className="w-full h-full object-cover"
-                        muted
-                        playsInline
-                        preload="metadata"
-                        onLoadedMetadata={() =>
-                          setVideoDuration(
-                            videoPreviewRef.current?.duration ?? 0,
-                          )
-                        }
-                        onEnded={stopVideo}
-                      />
-                    ) : bg ? (
-                      <img
-                        src={`file://${bg}`}
-                        className="w-full h-full object-cover"
-                        alt=""
-                      />
+                  <div className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg" style={{ aspectRatio: "16/9" }}>
+                    {bg ? (
+                      <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
                     ) : (
                       <div className="w-full h-full bg-black flex items-center justify-center">
                         <ImageIcon className="h-12 w-12 text-muted-foreground" />
                       </div>
                     )}
                   </div>
-
-                  <h2 className="text-lg font-bold mb-1">
-                    {currentSong.title}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mb-6">
-                    {isVideo ? "Video" : "Image"} · Click{" "}
-                    {isVideo ? "Play" : "Show"} to project
-                  </p>
-
-                  {/* Video progress bar */}
-                  {isVideo && (
-                    <div className="w-full max-w-md mb-3">
-                      <div
-                        className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
-                        onClick={(e) => {
-                          if (!videoDuration) return;
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          const ratio = (e.clientX - rect.left) / rect.width;
-                          const seekTo = ratio * videoDuration;
-                          if (videoPreviewRef.current)
-                            videoPreviewRef.current.currentTime = seekTo;
-                          setVideoCurrentTime(seekTo);
-                          window.worshipsync.slide.videoSeek(seekTo);
-                        }}
-                      >
-                        <div
-                          className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
-                          style={{
-                            width: `${videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
-                        <span>{formatTime(videoCurrentTime)}</span>
-                        <span>{formatTime(videoDuration)}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Controls */}
-                  <div className="flex items-center gap-3">
-                    {isVideo ? (
-                      <>
-                        {!videoPlaying ? (
-                          <Button
-                            size="lg"
-                            className="gap-2"
-                            onClick={() => {
-                              const preview = videoPreviewRef.current;
-                              const dur = preview?.duration ?? 0;
-                              setVideoDuration(dur);
-                              setVideoCurrentTime(0);
-                              sendSlide(selectedSongIdx, 0);
-                              window.worshipsync.slide.videoControl("play");
-                              preview?.play();
-                              setVideoPlaying(true);
-                              if (videoTimerRef.current)
-                                clearInterval(videoTimerRef.current);
-                              // Drive progress bar from preview's actual currentTime
-                              videoTimerRef.current = setInterval(() => {
-                                const t =
-                                  videoPreviewRef.current?.currentTime ?? 0;
-                                setVideoCurrentTime(t);
-                              }, 250);
-                            }}
-                          >
-                            <Play className="h-5 w-5 fill-current" />
-                            Play Video
-                          </Button>
-                        ) : (
-                          <>
-                            <Button
-                              size="lg"
-                              variant="outline"
-                              className="gap-2"
-                              onClick={() => {
-                                window.worshipsync.slide.videoControl("pause");
-                                videoPreviewRef.current?.pause();
-                                setVideoPlaying(false);
-                                if (videoTimerRef.current) {
-                                  clearInterval(videoTimerRef.current);
-                                  videoTimerRef.current = null;
-                                }
-                              }}
-                            >
-                              <Pause className="h-5 w-5" />
-                              Pause
-                            </Button>
-                            <Button
-                              size="lg"
-                              variant="destructive"
-                              className="gap-2"
-                              onClick={stopVideo}
-                            >
-                              <Square className="h-4 w-4 fill-current" />
-                              Stop
-                            </Button>
-                          </>
-                        )}
-                      </>
-                    ) : (
-                      <Button
-                        size="lg"
-                        className="gap-2"
-                        onClick={() => sendSlide(selectedSongIdx, 0)}
-                      >
-                        <Cast className="h-5 w-5" />
-                        Show on Screen
-                      </Button>
-                    )}
-                  </div>
-
-                  <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
-                    {isVideo
-                      ? "Preview plays here (muted). Audio plays on the projection screen."
-                      : "The image will be shown full-screen on the projection display."}
-                  </p>
+                  <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
+                  <p className="text-sm text-muted-foreground mb-6">Image · Click Show to project</p>
+                  <Button size="lg" className="gap-2" onClick={() => sendSlide(selectedSongIdx, 0)}>
+                    <Cast className="h-5 w-5" /> Show on Screen
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">The image will be shown full-screen on the projection display.</p>
                 </>
               );
             })()}
@@ -1339,8 +1240,8 @@ export default function PresenterDashboard({
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {/* Live preview */}
-          <div className="p-4 border-b border-border">
+          {/* Live preview — hidden for video items */}
+          {!(currentSong?.artist === "Media" && /\.(mp4|webm|mov)$/i.test(resolveBg(currentSong) ?? "")) && <div className="p-4 border-b border-border">
             <div
               className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center"
               style={{ aspectRatio: "16/9", padding: "16px" }}
@@ -1414,7 +1315,7 @@ export default function PresenterDashboard({
                 Next <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* Quick Actions */}
           <div className="p-4 border-b border-border">
