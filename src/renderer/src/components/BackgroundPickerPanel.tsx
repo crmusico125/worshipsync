@@ -42,8 +42,8 @@ export default function BackgroundPickerPanel({
   }, []);
 
   const loadLibrary = async () => {
-    const images = await window.worshipsync.backgrounds.listImages();
-    setLibraryImages(images);
+    const all = await window.worshipsync.backgrounds.listImages();
+    setLibraryImages(all.filter((p) => /\.(jpe?g|png|webp|gif|bmp|tiff?)$/i.test(p)));
   };
 
   const handleUpload = async () => {
