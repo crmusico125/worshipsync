@@ -498,8 +498,16 @@ ipcMain.handle('backgrounds:pickImage', async () => {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
   const ext = extname(srcPath).toLowerCase()
-  const filename = `bg_${Date.now()}${ext}`
-  const destPath = join(dir, filename)
+  const base = basename(srcPath, extname(srcPath))
+  // Use original filename; append _2, _3, … if it already exists
+  let filename = `${base}${ext}`
+  let destPath = join(dir, filename)
+  let counter = 2
+  while (existsSync(destPath)) {
+    filename = `${base}_${counter}${ext}`
+    destPath = join(dir, filename)
+    counter++
+  }
   try {
     copyFileSync(srcPath, destPath)
   } catch (e) {

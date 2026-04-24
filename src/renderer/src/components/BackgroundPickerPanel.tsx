@@ -383,7 +383,7 @@ export default function BackgroundPickerPanel({
                           textOverflow: "ellipsis",
                         }}
                       >
-                        {filename.replace(/^bg_\d+\./, "img.")}
+                        {filename}
                       </div>
                       <button
                         onClick={handleDelete}

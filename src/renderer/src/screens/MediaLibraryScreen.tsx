@@ -380,7 +380,7 @@ function MediaDetailPanel({
 
       {/* Info */}
       <div className="p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
-        <DetailRow label="Filename" value={item.filename.replace(/^bg_\d+\./, "img.")} />
+        <DetailRow label="Filename" value={item.filename} />
         <DetailRow
           label="Used by"
           value={
