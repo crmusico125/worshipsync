@@ -133,6 +133,10 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const [countdownRunning, setCountdownRunning] = useState(false)
   const [countdownDisplay, setCountdownDisplay] = useState("00:00:00")
   const [videoPlaying, setVideoPlaying] = useState(false)
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0)
+  const [videoDuration, setVideoDuration] = useState(0)
+  const videoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null)
   const [audioPlaying, setAudioPlaying] = useState(false)
   const [audioCurrentTime, setAudioCurrentTime] = useState(0)
   const [audioDuration, setAudioDuration] = useState(0)
@@ -435,6 +439,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+      if (videoTimerRef.current) clearInterval(videoTimerRef.current)
       if (audioTimerRef.current) clearInterval(audioTimerRef.current)
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
     }
@@ -565,6 +570,9 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                 onClick={() => {
                   setSelectedSongIdx(i)
                   setVideoPlaying(false)
+                  setVideoCurrentTime(0)
+                  setVideoDuration(0)
+                  if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
                   // Stop audio when switching songs
                   if (audioRef.current) {
                     audioRef.current.pause()
@@ -769,16 +777,32 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                 )
               }
 
+              const formatTime = (s: number) => {
+                const m = Math.floor(s / 60)
+                const sec = Math.floor(s % 60)
+                return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+              }
+
+              const stopVideo = () => {
+                window.worshipsync.slide.videoControl('stop')
+                setVideoPlaying(false)
+                setVideoCurrentTime(0)
+                setIsBlank(true)
+                if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
+              }
+
               return (
                 <>
                   {/* Media preview */}
                   <div className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg" style={{ aspectRatio: "16/9" }}>
                     {bg && isVideo ? (
                       <video
+                        ref={videoPreviewRef}
                         src={`file://${encodeURI(bg)}`}
                         className="w-full h-full object-cover"
                         muted
                         preload="metadata"
+                        onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)}
                       />
                     ) : bg ? (
                       <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
@@ -794,15 +818,45 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                     {isVideo ? "Video" : "Image"} · Click {isVideo ? "Play" : "Show"} to project
                   </p>
 
+                  {/* Video progress bar */}
+                  {isVideo && (
+                    <div className="w-full max-w-md mb-3">
+                      <div className="relative h-1.5 bg-input rounded-full overflow-hidden">
+                        <div
+                          className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
+                          style={{ width: `${videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
+                        <span>{formatTime(videoCurrentTime)}</span>
+                        <span>{formatTime(videoDuration)}</span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Controls */}
                   <div className="flex items-center gap-3">
                     {isVideo ? (
                       <>
                         {!videoPlaying ? (
                           <Button size="lg" className="gap-2" onClick={() => {
+                            const dur = videoPreviewRef.current?.duration ?? 0
+                            setVideoDuration(dur)
+                            setVideoCurrentTime(0)
                             sendSlide(selectedSongIdx, 0)
                             window.worshipsync.slide.videoControl('play')
                             setVideoPlaying(true)
+                            if (videoTimerRef.current) clearInterval(videoTimerRef.current)
+                            videoTimerRef.current = setInterval(() => {
+                              setVideoCurrentTime(prev => {
+                                const next = prev + 0.25
+                                if (dur > 0 && next >= dur) {
+                                  stopVideo()
+                                  return 0
+                                }
+                                return next
+                              })
+                            }, 250)
                           }}>
                             <Play className="h-5 w-5 fill-current" />
                             Play Video
@@ -812,16 +866,13 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                             <Button size="lg" variant="outline" className="gap-2" onClick={() => {
                               window.worshipsync.slide.videoControl('pause')
                               setVideoPlaying(false)
+                              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
                             }}>
-                              <Square className="h-4 w-4" />
+                              <Pause className="h-5 w-5" />
                               Pause
                             </Button>
-                            <Button size="lg" variant="destructive" className="gap-2" onClick={() => {
-                              window.worshipsync.slide.videoControl('stop')
-                              setVideoPlaying(false)
-                              setIsBlank(true)
-                            }}>
-                              <X className="h-4 w-4" />
+                            <Button size="lg" variant="destructive" className="gap-2" onClick={stopVideo}>
+                              <Square className="h-4 w-4 fill-current" />
                               Stop
                             </Button>
                           </>
