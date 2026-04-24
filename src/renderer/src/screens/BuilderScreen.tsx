@@ -156,6 +156,10 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   }, [selectedSongIdx])
 
   // ── Derived ──────────────────────────────────────────────────────────────
+  const isPast = selectedService
+    ? new Date(selectedService.date + "T00:00:00") < new Date(new Date().toLocaleDateString("en-CA") + "T00:00:00")
+    : false
+
   const currentItem = lineup[selectedSongIdx] ?? null
   const currentSong = currentItem?.song ?? null
   const selectedSectionIds: number[] = useMemo(
@@ -339,24 +343,32 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {selectedService.status !== "ready" && lineup.length > 0 && (
-            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={markReady}>
-              Mark as ready
-            </Button>
-          )}
-          {selectedService.status === "ready" && (
-            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-500 px-2 py-1 rounded-md bg-green-500/10">
-              Ready
+          {isPast ? (
+            <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-md">
+              View only · past service
             </span>
+          ) : (
+            <>
+              {selectedService.status !== "ready" && lineup.length > 0 && (
+                <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={markReady}>
+                  Mark as ready
+                </Button>
+              )}
+              {selectedService.status === "ready" && (
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-500 px-2 py-1 rounded-md bg-green-500/10">
+                  Ready
+                </span>
+              )}
+              <Button
+                size="sm"
+                className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
+                disabled={lineup.length === 0}
+                onClick={onGoLive}
+              >
+                <Radio className="h-3.5 w-3.5" /> Go Live
+              </Button>
+            </>
           )}
-          <Button
-            size="sm"
-            className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
-            disabled={lineup.length === 0}
-            onClick={onGoLive}
-          >
-            <Radio className="h-3.5 w-3.5" /> Go Live
-          </Button>
         </div>
       </div>
 
@@ -432,7 +444,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                         </p>
                       </div>
                     </button>
-                    {isSelected && (
+                    {isSelected && !isPast && (
                       <div className="flex items-center gap-0.5 px-2 pb-1.5">
                         <Button
                           variant="ghost" size="icon"
@@ -478,22 +490,24 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             )}
           </div>
 
-          <div className="p-3 border-t border-border shrink-0 space-y-1.5">
-            <Button
-              variant="outline" size="sm"
-              className="w-full gap-1.5 h-8 text-xs"
-              onClick={() => setShowLibrary(true)}
-            >
-              <BookOpen className="h-3.5 w-3.5" /> Add from Library
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setShowAddSong(true)}
-            >
-              <Plus className="h-3.5 w-3.5" /> Create new song
-            </Button>
-          </div>
+          {!isPast && (
+            <div className="p-3 border-t border-border shrink-0 space-y-1.5">
+              <Button
+                variant="outline" size="sm"
+                className="w-full gap-1.5 h-8 text-xs"
+                onClick={() => setShowLibrary(true)}
+              >
+                <BookOpen className="h-3.5 w-3.5" /> Add from Library
+              </Button>
+              <Button
+                variant="ghost" size="sm"
+                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowAddSong(true)}
+              >
+                <Plus className="h-3.5 w-3.5" /> Create new song
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* ─── CENTER: Song editor + sections ────────────────────────── */}
@@ -525,7 +539,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                       {currentSong.key && ` · Key: ${currentSong.key}`}
                     </p>
                   </div>
-                  {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && (
+                  {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && !isPast && (
                     <Button
                       variant="outline" size="sm"
                       className="gap-1.5 h-8 text-xs shrink-0"
@@ -546,7 +560,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                     <p className="text-xs text-muted-foreground mb-4">
                       Add lyrics and sections to this song to build slides.
                     </p>
-                    {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && (
+                    {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && !isPast && (
                       <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
                         <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
                       </Button>
@@ -573,7 +587,9 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                           return (
                             <label
                               key={sec.id}
-                              className={`flex items-start gap-2.5 px-3 py-2 rounded-md border cursor-pointer transition-colors ${
+                              className={`flex items-start gap-2.5 px-3 py-2 rounded-md border transition-colors ${
+                                isPast ? "cursor-default opacity-60" : "cursor-pointer"
+                              } ${
                                 included ? "border-primary/30 bg-primary/5" : "border-border hover:bg-accent/50"
                               }`}
                               onClick={(e) => {
@@ -583,8 +599,9 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                             >
                               <Checkbox
                                 checked={included}
+                                disabled={isPast}
                                 onCheckedChange={(checked) => {
-                                  handleSectionToggle(sec.id, checked === true)
+                                  if (!isPast) handleSectionToggle(sec.id, checked === true)
                                 }}
                                 className="mt-0.5"
                               />
@@ -674,6 +691,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             bg={effectiveBg}
             bgImages={bgImages}
             canCustomize={!!currentSong}
+            readOnly={isPast}
             onThemeChange={(key, value) => setThemeOverrides(p => ({ ...p, [key]: value }))}
             onBgChange={(path) => setBgOverride(path)}
           />
@@ -729,7 +747,7 @@ const WEIGHT_OPTIONS = [
 const COLOR_SWATCHES = ["#ffffff", "#f5a623", "#4d8ef0", "#3ecf8e", "#f05252", "#9b59b6"]
 
 function AppearancePanel({
-  slide, theme, bg, bgImages, canCustomize,
+  slide, theme, bg, bgImages, canCustomize, readOnly,
   onThemeChange, onBgChange,
 }: {
   slide: Slide | null
@@ -737,6 +755,7 @@ function AppearancePanel({
   bg: string | null
   bgImages: string[]
   canCustomize: boolean
+  readOnly?: boolean
   onThemeChange: (key: keyof ThemeStyle, value: any) => void
   onBgChange: (path: string | null) => void
 }) {
@@ -816,7 +835,7 @@ function AppearancePanel({
           </TabsList>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${readOnly ? "pointer-events-none opacity-50" : ""}`}>
           {!canCustomize ? (
             <div className="p-6 text-center">
               <Palette className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
