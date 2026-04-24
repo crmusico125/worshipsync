@@ -387,6 +387,20 @@ export default function PresenterDashboard({
     setActiveSlideIdx(-1);
   }, [selectedSongIdx]);
 
+  // When going live, always start the projection window blank regardless of
+  // prior state. Send immediately (covers an already-open window that was
+  // just focused) and again on projection:ready (covers a freshly-created window).
+  useEffect(() => {
+    if (!projectionOpen) return;
+    window.worshipsync.slide.blank(true);
+    setIsBlank(true);
+    setActiveSlideIdx(-1);
+    const cleanup = window.worshipsync.window.onProjectionReady(() => {
+      window.worshipsync.slide.blank(true);
+    });
+    return cleanup;
+  }, [projectionOpen]);
+
   // ── Controls ─────────────────────────────────────────────────────────────
   const clearAll = () => {
     window.worshipsync.slide.blank(true);
