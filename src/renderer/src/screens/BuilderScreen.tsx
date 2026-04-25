@@ -1,9 +1,18 @@
 import { useEffect, useState, useMemo } from "react"
 import {
-  Plus, BookOpen, ChevronUp, ChevronDown, Trash2, Pencil,
+  Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Type, Palette, Monitor, Timer, Film, Volume2,
+  Type, Palette, Monitor, Timer, Film, Volume2, GripVertical,
 } from "lucide-react"
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext, useSortable, verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -209,22 +218,25 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     return defaultThemeBg
   }, [currentSong, themeCache, defaultThemeBg, bgOverride])
 
-  // ── Actions ──────────────────────────────────────────────────────────────
-  const moveUp = async (i: number) => {
-    if (i === 0) return
-    const ids = lineup.map(l => l.id)
-    ;[ids[i - 1], ids[i]] = [ids[i], ids[i - 1]]
-    await reorderLineup(ids)
-    if (selectedSongIdx === i) setSelectedSongIdx(i - 1)
+  // ── DnD sensors ──────────────────────────────────────────────────────────
+  const sensors = useSensors(useSensor(PointerSensor, {
+    activationConstraint: { distance: 4 },
+  }))
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = lineup.findIndex(l => l.id === active.id)
+    const newIndex = lineup.findIndex(l => l.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const newIds = arrayMove(lineup.map(l => l.id), oldIndex, newIndex)
+    await reorderLineup(newIds)
+    if (selectedSongIdx === oldIndex) setSelectedSongIdx(newIndex)
+    else if (selectedSongIdx > oldIndex && selectedSongIdx <= newIndex) setSelectedSongIdx(selectedSongIdx - 1)
+    else if (selectedSongIdx < oldIndex && selectedSongIdx >= newIndex) setSelectedSongIdx(selectedSongIdx + 1)
   }
 
-  const moveDown = async (i: number) => {
-    if (i === lineup.length - 1) return
-    const ids = lineup.map(l => l.id)
-    ;[ids[i], ids[i + 1]] = [ids[i + 1], ids[i]]
-    await reorderLineup(ids)
-    if (selectedSongIdx === i) setSelectedSongIdx(i + 1)
-  }
+  // ── Actions ──────────────────────────────────────────────────────────────
 
   const handleCreated = async (songId: number) => {
     await loadSongs()
@@ -433,102 +445,59 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                 </p>
               </div>
             ) : (
-              lineup.map((item, i) => {
-                const isSelected = selectedSongIdx === i
-                const isCountdown = item.itemType === 'countdown'
-                const isScripture = item.song?.artist === 'Scripture'
-                const isMedia = item.song?.artist === 'Media'
-                let slideCount = 0
-                if (!isCountdown && !isMedia && item.song) {
-                  const itemSelectedIds: number[] = (() => {
-                    try { return JSON.parse(item.selectedSections || "[]") } catch { return [] }
-                  })()
-                  const itemNone = itemSelectedIds.length === 1 && itemSelectedIds[0] === -1
-                  if (!itemNone) {
-                    let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
-                    if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
-                      try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={lineup.map(l => l.id)} strategy={verticalListSortingStrategy}>
+                  {lineup.map((item, i) => {
+                    const isSelected = selectedSongIdx === i
+                    const isCountdown = item.itemType === 'countdown'
+                    const isScripture = item.song?.artist === 'Scripture'
+                    const isMedia = item.song?.artist === 'Media'
+                    let slideCount = 0
+                    if (!isCountdown && !isMedia && item.song) {
+                      const itemSelectedIds: number[] = (() => {
+                        try { return JSON.parse(item.selectedSections || "[]") } catch { return [] }
+                      })()
+                      const itemNone = itemSelectedIds.length === 1 && itemSelectedIds[0] === -1
+                      if (!itemNone) {
+                        let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
+                        if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
+                          try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
+                        }
+                        slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
+                      }
                     }
-                    slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
-                  }
-                }
-                return (
-                  <div
-                    key={item.id}
-                    className={`group rounded-md mb-0.5 transition-colors ${
-                      isSelected ? "bg-primary/10 border border-primary/30" : "border border-transparent hover:bg-accent/50"
-                    }`}
-                  >
-                    <button
-                      onClick={() => setSelectedSongIdx(i)}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
-                    >
-                      <span className={`text-[10px] font-mono w-4 shrink-0 ${
-                        isSelected ? "text-primary" : "text-muted-foreground"
-                      }`}>
-                        {i + 1}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-xs font-medium truncate ${
-                          isSelected ? "text-primary" : "text-foreground"
-                        }`}>
-                          {isCountdown ? "Countdown Timer" : item.song?.title ?? "—"}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                          {isCountdown
+                    return (
+                      <SortableLineupItem
+                        key={item.id}
+                        id={item.id}
+                        index={i}
+                        isSelected={isSelected}
+                        title={isCountdown ? "Countdown Timer" : item.song?.title ?? "—"}
+                        subtitle={
+                          isCountdown
                             ? "Pre-Service Countdown"
                             : isScripture
                               ? `Scripture · ${slideCount} slides`
                               : isMedia
                                 ? "Media"
                                 : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
-                          }
-                        </p>
-                      </div>
-                    </button>
-                    {isSelected && !isPast && (
-                      <div className="flex items-center gap-0.5 px-2 pb-1.5">
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                          disabled={i === 0}
-                          onClick={(e) => { e.stopPropagation(); moveUp(i) }}
-                          title="Move up"
-                        >
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                          disabled={i === lineup.length - 1}
-                          onClick={(e) => { e.stopPropagation(); moveDown(i) }}
-                          title="Move down"
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </Button>
-                        <div className="flex-1" />
-                        <Button
-                          variant="ghost" size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            const label = isCountdown ? "Countdown Timer" : item.song?.title ?? "item"
-                            if (confirm(`Remove "${label}" from lineup?`)) {
-                              removeSongFromLineup(item.id)
-                              if (selectedSongIdx >= lineup.length - 1) {
-                                setSelectedSongIdx(Math.max(0, lineup.length - 2))
-                              }
+                        }
+                        isPast={isPast}
+                        onSelect={() => setSelectedSongIdx(i)}
+                        onDelete={() => {
+                          const label = isCountdown ? "Countdown Timer" : item.song?.title ?? "item"
+                          if (confirm(`Remove "${label}" from lineup?`)) {
+                            removeSongFromLineup(item.id)
+                            if (selectedSongIdx >= lineup.length - 1) {
+                              setSelectedSongIdx(Math.max(0, lineup.length - 2))
                             }
-                          }}
-                          title="Remove"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })
+                          }
+                        }}
+                      />
+                    )
+                  })}
+                </SortableContext>
+              </DndContext>
             )}
           </div>
 
@@ -822,6 +791,82 @@ const WEIGHT_OPTIONS = [
   { value: "600", label: "Semi-Bold" },
   { value: "400", label: "Regular" },
 ]
+
+// ── SortableLineupItem ────────────────────────────────────────────────────────
+
+function SortableLineupItem({
+  id, index, isSelected,
+  title, subtitle, isPast, onSelect, onDelete,
+}: {
+  id: number
+  index: number
+  isSelected: boolean
+  title: string
+  subtitle: string
+  isPast: boolean
+  onSelect: () => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 10 : undefined,
+      }}
+      className={`group rounded-md mb-0.5 transition-colors ${
+        isSelected ? "bg-primary/10 border border-primary/30" : "border border-transparent hover:bg-accent/50"
+      }`}
+    >
+      <div className="w-full flex items-center gap-1 pr-2.5 text-left">
+        {/* Drag handle */}
+        {!isPast && (
+          <button
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 pl-1.5 py-2 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none"
+            tabIndex={-1}
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <button
+          onClick={onSelect}
+          className="flex items-center gap-2 py-2 text-left flex-1 min-w-0"
+          style={{ paddingLeft: isPast ? "10px" : undefined }}
+        >
+          <span className={`text-[10px] font-mono w-4 shrink-0 ${
+            isSelected ? "text-primary" : "text-muted-foreground"
+          }`}>
+            {index + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={`text-xs font-medium truncate ${
+              isSelected ? "text-primary" : "text-foreground"
+            }`}>
+              {title}
+            </p>
+            <p className="text-[10px] text-muted-foreground truncate mt-0.5">{subtitle}</p>
+          </div>
+        </button>
+        {/* Delete — visible on hover or when selected */}
+        {!isPast && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            title="Remove"
+            className="flex-shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const COLOR_SWATCHES = ["#ffffff", "#f5a623", "#4d8ef0", "#3ecf8e", "#f05252", "#9b59b6"]
 
