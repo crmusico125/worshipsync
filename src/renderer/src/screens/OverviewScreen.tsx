@@ -63,7 +63,30 @@ interface Props {
   activeServiceId: number | null
 }
 
-function ServiceTableRow({ s, past, onOpen }: { s: ServiceWithCount; past?: boolean; onOpen: () => void }) {
+function formatTime(t: string) {
+  return new Date(`2000-01-01T${t}`).toLocaleTimeString("en-US", {
+    hour: "numeric", minute: "2-digit", hour12: true,
+  })
+}
+
+function resolveServiceTime(
+  date: string,
+  schedules: ServiceSchedule[],
+  defaultTime: string,
+): string {
+  const dow = new Date(date + "T12:00:00").getDay()
+  const match = schedules.find((s) => s.dayOfWeek === dow)
+  return formatTime(match?.startTime ?? defaultTime)
+}
+
+function ServiceTableRow({
+  s, past, time, onOpen,
+}: {
+  s: ServiceWithCount
+  past?: boolean
+  time: string
+  onOpen: () => void
+}) {
   return (
     <tr className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors">
       <td className="py-3 px-4 pl-5 font-semibold text-foreground">{s.label}</td>
@@ -72,6 +95,7 @@ function ServiceTableRow({ s, past, onOpen }: { s: ServiceWithCount; past?: bool
           month: "short", day: "numeric", year: "numeric",
         })}
       </td>
+      <td className="py-3 px-4 text-muted-foreground">{time}</td>
       <td className="py-3 px-4 text-muted-foreground">{s.itemCount} {s.itemCount === 1 ? "item" : "items"}</td>
       <td className="py-3 px-4"><StatusPill status={s.status} /></td>
       <td className="py-3 px-4 pr-5 text-right">
@@ -309,7 +333,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
               <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-border">
-                    {["Service", "Date", "Items", "Status", ""].map((h) => (
+                    {["Service", "Date", "Time", "Items", "Status", ""].map((h) => (
                       <th key={h} className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wide py-2.5 px-4 first:pl-5 last:pr-5 last:text-right">
                         {h}
                       </th>
@@ -327,7 +351,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                     </tr>
                   )}
                   {upcoming.slice(1).map((s) => (
-                    <ServiceTableRow key={s.id} s={s} onOpen={() => onOpenBuilder(s.id)} />
+                    <ServiceTableRow key={s.id} s={s} time={resolveServiceTime(s.date, serviceSchedules, serviceTime)} onOpen={() => onOpenBuilder(s.id)} />
                   ))}
                   {recent.length > 0 && (
                     <tr>
@@ -339,7 +363,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                     </tr>
                   )}
                   {recent.map((s) => (
-                    <ServiceTableRow key={s.id} s={s} past onOpen={() => onOpenBuilder(s.id)} />
+                    <ServiceTableRow key={s.id} s={s} past time={resolveServiceTime(s.date, serviceSchedules, serviceTime)} onOpen={() => onOpenBuilder(s.id)} />
                   ))}
                 </tbody>
               </table>

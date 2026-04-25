@@ -28,14 +28,17 @@
       "out/**/*",
       "!out/**/*.map"
     ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*",
+      "**/node_modules/bindings/**/*"
+    ],
     "mac": {
       "category": "public.app-category.music",
       "target": [
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ]
