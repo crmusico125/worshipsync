@@ -97,6 +97,8 @@ export default function App() {
               onGoLive={handleOpenServiceLive}
               onOpenBuilder={handleOpenService}
               onNavigate={setCurrentScreen}
+              projectionOpen={projectionOpen}
+              activeServiceId={activeServiceId}
             />
           )}
           {currentScreen === "planner" && (

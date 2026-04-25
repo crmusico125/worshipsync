@@ -59,6 +59,8 @@ interface Props {
   onGoLive: (serviceId: number) => void
   onOpenBuilder: (serviceId: number) => void
   onNavigate: (screen: AppScreen) => void
+  projectionOpen: boolean
+  activeServiceId: number | null
 }
 
 function ServiceTableRow({ s, past, onOpen }: { s: ServiceWithCount; past?: boolean; onOpen: () => void }) {
@@ -91,7 +93,7 @@ function StatusPill({ status }: { status: "empty" | "in-progress" | "ready" }) {
   return <span className={map[status]}>{labels[status]}</span>
 }
 
-export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: Props) {
+export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, projectionOpen, activeServiceId }: Props) {
   const [now, setNow] = useState(new Date())
   const [services, setServices] = useState<ServiceWithCount[]>([])
   const [showNewServiceModal, setShowNewServiceModal] = useState(false)
@@ -220,12 +222,22 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate }: 
 
                 {/* Actions */}
                 <div className="flex flex-col gap-2 shrink-0">
-                  <Button size="sm" className="gap-1.5" onClick={() => onGoLive(nextService.id)}>
-                    <MonitorPlay className="h-3.5 w-3.5" /> Go Live
-                  </Button>
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onOpenBuilder(nextService.id)}>
-                    Open Planner
-                  </Button>
+                  {projectionOpen && activeServiceId === nextService.id ? (
+                    <Button size="sm" className="gap-1.5 bg-red-600 hover:bg-red-500 text-white" onClick={() => onNavigate("service")}>
+                      <MonitorPlay className="h-3.5 w-3.5" /> Return to Live
+                    </Button>
+                  ) : (
+                    <>
+                      {!projectionOpen && (
+                        <Button size="sm" className="gap-1.5" onClick={() => onGoLive(nextService.id)}>
+                          <MonitorPlay className="h-3.5 w-3.5" /> Go Live
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onOpenBuilder(nextService.id)}>
+                        Open Planner
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
