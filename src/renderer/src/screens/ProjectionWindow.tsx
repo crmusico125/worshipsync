@@ -139,6 +139,28 @@ export default function ProjectionWindow() {
     };
   }, [displayState, countdownTarget]);
 
+  // Recover audio pipeline when system audio device changes (Chromium silently drops audio on device switch)
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      const vid = videoRef.current;
+      if (!vid) return;
+      const wasPlaying = !vid.paused;
+      const currentTime = vid.currentTime;
+      vid.load();
+      vid.addEventListener(
+        "loadedmetadata",
+        () => {
+          vid.currentTime = currentTime;
+          if (wasPlaying) vid.play().catch(() => {});
+        },
+        { once: true },
+      );
+    };
+
+    navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
+  }, []);
+
   // Apply pending video action / seek once the video element mounts
   useEffect(() => {
     if (
