@@ -617,6 +617,13 @@ export default function PresenterDashboard({
     return () => window.removeEventListener("keydown", handler);
   }, [goNextSlide, goPrevSlide]);
 
+  // Scroll active slide into view when it changes
+  useEffect(() => {
+    if (activeSlideIdx < 0 || !slideGridRef.current) return;
+    const el = slideGridRef.current.querySelector<HTMLElement>(`[data-slide-idx="${activeSlideIdx}"]`);
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeSlideIdx, selectedSongIdx]);
+
   // ── Derived ──────────────────────────────────────────────────────────────
   const currentSong = liveSongs[selectedSongIdx] ?? null;
   const currentSlide = currentSong?.slides[activeSlideIdx] ?? null;
@@ -1239,7 +1246,7 @@ export default function PresenterDashboard({
                   const abbrev =
                     SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
                   return (
-                    <div key={i} className="flex flex-col gap-1.5">
+                    <div key={i} data-slide-idx={i} className="flex flex-col gap-1.5">
                       {/* Section label row */}
                       <div className="flex items-center justify-between gap-2 px-0.5 h-5">
                         <div className="flex items-center gap-1.5">
