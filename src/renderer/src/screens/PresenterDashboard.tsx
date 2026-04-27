@@ -728,7 +728,7 @@ export default function PresenterDashboard({
               )}
             </span>
             <span className="text-[11px] text-muted-foreground bg-input px-2 py-0.5 rounded font-medium">
-              {liveSongs.length} {liveSongs.length === 1 ? "item" : "items"}
+              Item {selectedSongIdx + 1} of {liveSongs.length}
             </span>
             <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-[hsl(var(--success)/0.14)] text-[hsl(var(--success))]">
               <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
