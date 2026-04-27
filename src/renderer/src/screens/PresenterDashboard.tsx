@@ -236,6 +236,16 @@ export default function PresenterDashboard({
         if (state.churchName)       setChurchName(state.churchName);
       })
       .catch(() => {});
+
+    const cleanupDisplays = window.worshipsync.window.onDisplaysChanged((d) => {
+      setDisplays(d);
+      setSelectedDisplayId((prev) => {
+        // Keep current selection if it still exists, otherwise pick the first external
+        if (prev !== undefined && d.find((x) => x.id === prev)) return prev;
+        return d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
+      });
+    });
+    return cleanupDisplays;
   }, []);
 
   // ── Build live songs ─────────────────────────────────────────────────────

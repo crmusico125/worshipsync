@@ -169,6 +169,7 @@ ipcMain.handle('window:getDisplayCount', () => {
   return screen.getAllDisplays().length
 })
 
+
 ipcMain.handle('window:getDisplays', () => {
   const primary = screen.getPrimaryDisplay()
   return screen.getAllDisplays().map(d => ({
@@ -865,6 +866,21 @@ app.whenReady().then(() => {
   })
 
   createControlWindow()
+
+  // Notify renderer when displays are added or removed
+  const notifyDisplaysChanged = () => {
+    const primary = screen.getPrimaryDisplay()
+    const displays = screen.getAllDisplays().map(d => ({
+      id: d.id,
+      label: d.label || `Display ${d.id}`,
+      width: d.size.width,
+      height: d.size.height,
+      isPrimary: d.id === primary.id,
+    }))
+    controlWindow?.webContents.send('window:displaysChanged', displays)
+  }
+  screen.on('display-added', notifyDisplaysChanged)
+  screen.on('display-removed', notifyDisplaysChanged)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

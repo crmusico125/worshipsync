@@ -82,6 +82,7 @@ declare global {
         closeProjection: () => void
         onProjectionReady: (cb: () => void) => () => void
         onProjectionClosed: (cb: () => void) => () => void
+        onDisplaysChanged: (cb: (displays: { id: number; label: string; width: number; height: number; isPrimary: boolean }[]) => void) => () => void
       }
       projection: {
         ready: () => void

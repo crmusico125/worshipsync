@@ -143,6 +143,8 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
       if (state.serviceTimezone)  setServiceTimezone(state.serviceTimezone)
       if (state.serviceSchedules) setServiceSchedules(state.serviceSchedules)
     }).catch(() => {})
+    const cleanupDisplays = window.worshipsync.window.onDisplaysChanged((d) => setDisplays(d as Display[]))
+    return cleanupDisplays
   }, [])
 
   const todayStr = now.toLocaleDateString("en-CA")

@@ -51,6 +51,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     onProjectionClosed: (cb: () => void) => {
       ipcRenderer.on('window:projectionClosed', cb)
       return () => ipcRenderer.removeListener('window:projectionClosed', cb)
+    },
+    onDisplaysChanged: (cb: (displays: { id: number; label: string; width: number; height: number; isPrimary: boolean }[]) => void) => {
+      ipcRenderer.on('window:displaysChanged', (_e, displays) => cb(displays))
+      return () => ipcRenderer.removeAllListeners('window:displaysChanged')
     }
   },
 
