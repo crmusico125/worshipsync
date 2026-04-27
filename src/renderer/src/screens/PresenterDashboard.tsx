@@ -429,10 +429,27 @@ export default function PresenterDashboard({
     setIsBlank(false);
   };
 
+  const jumpToItem = useCallback((idx: number) => {
+    const item = liveSongs[idx];
+    if (!item) return;
+    // Items without slides (countdown, media, etc.) just select via state
+    if (!item.slides || item.slides.length === 0) {
+      setSelectedSongIdx(idx);
+      setActiveSlideIdx(-1);
+    } else {
+      sendSlide(idx, 0);
+    }
+  }, [liveSongs, sendSlide]);
+
   const goNextSong = useCallback(() => {
     const next = selectedSongIdx + 1;
-    if (next < liveSongs.length) setSelectedSongIdx(next);
-  }, [selectedSongIdx, liveSongs.length]);
+    if (next < liveSongs.length) jumpToItem(next);
+  }, [selectedSongIdx, liveSongs.length, jumpToItem]);
+
+  const goPrevSong = useCallback(() => {
+    const prev = selectedSongIdx - 1;
+    if (prev >= 0) jumpToItem(prev);
+  }, [selectedSongIdx, jumpToItem]);
 
   const goPrevSlide = useCallback(() => {
     const prev = activeSlideIdx - 1;
@@ -620,6 +637,10 @@ export default function PresenterDashboard({
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goPrevSlide();
+      } else if (e.key === "Tab") {
+        e.preventDefault();
+        if (e.shiftKey) goPrevSong();
+        else goNextSong();
       } else if (e.key === "b" || e.key === "B") {
         e.preventDefault();
         toBlack();
@@ -632,7 +653,7 @@ export default function PresenterDashboard({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [goNextSlide, goPrevSlide]);
+  }, [goNextSlide, goPrevSlide, goNextSong, goPrevSong]);
 
 
   // Scroll active slide into view when it changes
@@ -1681,6 +1702,8 @@ export default function PresenterDashboard({
                     items: [
                       { keys: ["→", "Space"], label: "Next slide" },
                       { keys: ["←"], label: "Previous slide" },
+                      { keys: ["Tab"], label: "Next item" },
+                      { keys: ["⇧ Tab"], label: "Previous item" },
                     ],
                   },
                   {
