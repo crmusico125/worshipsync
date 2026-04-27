@@ -27,6 +27,7 @@ import {
   Film,
   Volume2,
   RefreshCw,
+  Keyboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore } from "../store/useServiceStore";
@@ -155,6 +156,7 @@ export default function PresenterDashboard({
   const [selectedSongIdx, setSelectedSongIdx] = useState(0);
   const [activeSlideIdx, setActiveSlideIdx] = useState(-1);
   const [isBlank, setIsBlank] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
@@ -621,11 +623,17 @@ export default function PresenterDashboard({
       } else if (e.key === "b" || e.key === "B") {
         e.preventDefault();
         toBlack();
+      } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+        e.preventDefault();
+        setShowHelp((v) => !v);
+      } else if (e.key === "Escape") {
+        setShowHelp(false);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [goNextSlide, goPrevSlide]);
+
 
   // Scroll active slide into view when it changes
   useEffect(() => {
@@ -694,7 +702,7 @@ export default function PresenterDashboard({
   }
 
   return (
-    <div className="h-full flex overflow-hidden bg-background text-foreground">
+    <div className="h-full flex overflow-hidden bg-background text-foreground relative">
       {/* ═════ LEFT: Service Lineup Panel (260px) ═════ */}
       <div className="w-[260px] shrink-0 border-r border-border flex flex-col bg-card">
         {/* Header — draggable */}
@@ -1376,10 +1384,19 @@ export default function PresenterDashboard({
         <div className="px-4 pt-3 pb-3 border-b border-border">
           <div className="flex justify-between items-center gap-2 mb-3">
             <h2 className="text-sm font-semibold">Live Output</h2>
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded bg-[hsl(var(--success)/0.16)] text-[hsl(var(--success))]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
-              ON AIR
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowHelp(true)}
+                title="Keyboard shortcuts (?)"
+                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              >
+                <Keyboard className="h-3.5 w-3.5" />
+              </button>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded bg-[hsl(var(--success)/0.16)] text-[hsl(var(--success))]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
+                ON AIR
+              </span>
+            </div>
           </div>
 
           {/* Display selector */}
@@ -1630,6 +1647,90 @@ export default function PresenterDashboard({
           })()}
         </div>
       </div>
+
+      {/* Keyboard shortcuts overlay */}
+      {showHelp && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowHelp(false)}
+        >
+          <div
+            className="bg-card border border-border rounded-xl shadow-2xl w-[420px] max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Keyboard className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">Keyboard Shortcuts</h3>
+              </div>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Shortcut groups */}
+            <div className="px-5 py-4 space-y-5 text-sm">
+              {(
+                [
+                  {
+                    group: "Navigation",
+                    items: [
+                      { keys: ["→", "Space"], label: "Next slide" },
+                      { keys: ["←"], label: "Previous slide" },
+                    ],
+                  },
+                  {
+                    group: "Output",
+                    items: [
+                      { keys: ["B"], label: "Blank screen (black)" },
+                    ],
+                  },
+                  {
+                    group: "Interface",
+                    items: [
+                      { keys: ["?"], label: "Toggle this help overlay" },
+                      { keys: ["Esc"], label: "Close overlay" },
+                    ],
+                  },
+                ] as { group: string; items: { keys: string[]; label: string }[] }[]
+              ).map(({ group, items }) => (
+                <div key={group}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                    {group}
+                  </p>
+                  <div className="space-y-1.5">
+                    {items.map(({ keys, label }) => (
+                      <div key={label} className="flex items-center justify-between gap-4">
+                        <span className="text-foreground/80">{label}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {keys.map((k, i) => (
+                            <React.Fragment key={k}>
+                              {i > 0 && (
+                                <span className="text-[10px] text-muted-foreground">or</span>
+                              )}
+                              <kbd className="inline-flex items-center justify-center min-w-[28px] h-6 px-1.5 rounded border border-border bg-background text-[11px] font-mono font-medium shadow-sm">
+                                {k}
+                              </kbd>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <p className="px-5 pb-4 text-[10px] text-muted-foreground">
+              Press <kbd className="inline-flex items-center px-1 rounded border border-border bg-background font-mono text-[10px]">Esc</kbd> or click outside to dismiss.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Library modal */}
       {showLibrary && (
