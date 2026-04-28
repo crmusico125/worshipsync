@@ -158,6 +158,8 @@ export default function PresenterDashboard({
   const [activeSlideIdx, setActiveSlideIdx] = useState(-1);
   const [isBlank, setIsBlank] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [confirmEndShow, setConfirmEndShow] = useState(false);
+  const confirmEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
@@ -474,6 +476,13 @@ export default function PresenterDashboard({
   };
 
   const endShow = () => {
+    if (!confirmEndShow) {
+      setConfirmEndShow(true);
+      confirmEndTimer.current = setTimeout(() => setConfirmEndShow(false), 3000);
+      return;
+    }
+    if (confirmEndTimer.current) clearTimeout(confirmEndTimer.current);
+    setConfirmEndShow(false);
     window.worshipsync.slide.blank(true);
     window.worshipsync.window.closeProjection();
     onProjectionChange(false);
@@ -614,6 +623,7 @@ export default function PresenterDashboard({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (confirmEndTimer.current) clearTimeout(confirmEndTimer.current);
       if (countdownIntervalRef.current)
         clearInterval(countdownIntervalRef.current);
       if (videoTimerRef.current) clearInterval(videoTimerRef.current);
@@ -1623,9 +1633,9 @@ export default function PresenterDashboard({
               />
               <QuickAction
                 icon={MonitorOff}
-                label="End Show"
-                iconBg="bg-destructive/14"
-                iconColor="text-destructive"
+                label={confirmEndShow ? "Tap to confirm" : "End Show"}
+                iconBg={confirmEndShow ? "bg-destructive" : "bg-destructive/14"}
+                iconColor={confirmEndShow ? "text-white" : "text-destructive"}
                 onClick={endShow}
               />
             </div>
