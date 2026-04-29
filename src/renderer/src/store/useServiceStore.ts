@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-interface ServiceDate {
+export interface ServiceDate {
   id: number
   date: string
   label: string

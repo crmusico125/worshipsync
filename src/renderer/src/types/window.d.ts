@@ -100,6 +100,8 @@ declare global {
       services: {
         getAll:           () => Promise<ServiceDate[]>
         getAllWithCounts:  () => Promise<(ServiceDate & { itemCount: number })[]>
+        getRecent:        () => Promise<ServiceDate[]>
+        search:           (q: string) => Promise<ServiceDate[]>
         getByDate:        (date: string) => Promise<ServiceDate | null>
         create:           (data: unknown) => Promise<ServiceDate>
         update:           (id: number, data: { label?: string; date?: string }) => Promise<ServiceDate>

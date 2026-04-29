@@ -9,6 +9,7 @@ import {
   MonitorOff,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Music,
   GripVertical,
   Pencil,
@@ -28,9 +29,11 @@ import {
   Volume2,
   RefreshCw,
   Keyboard,
+  Search,
+  Calendar,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useServiceStore } from "../store/useServiceStore";
+import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
 import LibraryModal from "../components/LibraryModal";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -149,6 +152,7 @@ export default function PresenterDashboard({
     selectedService,
     lineup,
     loadLineup,
+    selectService,
     addSongToLineup,
     addCountdownToLineup,
   } = useServiceStore();
@@ -177,6 +181,13 @@ export default function PresenterDashboard({
     number | undefined
   >(undefined);
   const slideGridRef = useRef<HTMLDivElement>(null);
+
+  // ── Service switcher ─────────────────────────────────────────────────────
+  const [showSwitcher, setShowSwitcher] = useState(false);
+  const [switcherSearch, setSwitcherSearch] = useState("");
+  const [recentServices, setRecentServices] = useState<ServiceDate[]>([]);
+  const [switcherResults, setSwitcherResults] = useState<ServiceDate[]>([]);
+  const switcherSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Countdown state
   const [countdownRunning, setCountdownRunning] = useState(false);
@@ -489,6 +500,47 @@ export default function PresenterDashboard({
     onExitLive();
   };
 
+  // ── Switcher callbacks ───────────────────────────────────────────────────
+  const [pendingSwitch, setPendingSwitch] = useState<ServiceDate | null>(null);
+
+  const openSwitcher = useCallback(async () => {
+    const recent = await window.worshipsync.services.getRecent();
+    setRecentServices(recent);
+    setSwitcherSearch("");
+    setSwitcherResults([]);
+    setPendingSwitch(null);
+    setShowSwitcher(true);
+  }, []);
+
+  const handleSwitcherSearch = useCallback((q: string) => {
+    setSwitcherSearch(q);
+    setPendingSwitch(null);
+    if (switcherSearchTimer.current) clearTimeout(switcherSearchTimer.current);
+    if (!q.trim()) {
+      setSwitcherResults([]);
+      return;
+    }
+    switcherSearchTimer.current = setTimeout(async () => {
+      const results = await window.worshipsync.services.search(q);
+      setSwitcherResults(results);
+    }, 300);
+  }, []);
+
+  const requestSwitch = useCallback((svc: ServiceDate) => {
+    if (svc.id === selectedService?.id) return;
+    setPendingSwitch(svc);
+  }, [selectedService]);
+
+  const confirmSwitch = useCallback(async () => {
+    if (!pendingSwitch) return;
+    await selectService(pendingSwitch);
+    setSelectedSongIdx(0);
+    setActiveSlideIdx(-1);
+    setShowSwitcher(false);
+    setPendingSwitch(null);
+  }, [pendingSwitch, selectService]);
+
+
   const handleLibraryAdd = async (songIds: number[]) => {
     for (const id of songIds) await addSongToLineup(id);
   };
@@ -738,16 +790,103 @@ export default function PresenterDashboard({
 
   return (
     <div className="h-full flex overflow-hidden bg-background text-foreground relative">
+      {/* Overlay to close switcher when clicking outside */}
+      {showSwitcher && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }}
+        />
+      )}
       {/* ═════ LEFT: Service Lineup Panel (260px) ═════ */}
       <div className="w-[260px] shrink-0 border-r border-border flex flex-col bg-card">
         {/* Header — draggable */}
         <div
-          className="px-4 py-3 border-b border-border"
+          className="px-4 py-3 border-b border-border relative"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
-          <h2 className="text-sm font-semibold truncate">
-            {selectedService.label}
-          </h2>
+          <button
+            onClick={openSwitcher}
+            className="flex items-center gap-1 min-w-0 group hover:text-primary transition-colors"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <span className="text-sm font-semibold truncate">{selectedService.label}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+          </button>
+
+          {/* Service switcher dropdown */}
+          {showSwitcher && (
+            <div className="absolute top-full left-0 w-full z-50 bg-card border border-border shadow-xl rounded-b-lg overflow-hidden"
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            >
+              <div className="p-2 border-b border-border">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    autoFocus
+                    value={switcherSearch}
+                    onChange={(e) => handleSwitcherSearch(e.target.value)}
+                    placeholder="Search lineups…"
+                    className="w-full pl-7 pr-2 py-1.5 text-xs bg-input rounded border border-border focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {!switcherSearch.trim() ? (
+                  <>
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Upcoming Lineups
+                    </p>
+                    {recentServices.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">No upcoming services</p>
+                    )}
+                    {recentServices.map((svc) => (
+                      <SwitcherRow
+                        key={svc.id}
+                        svc={svc}
+                        isCurrent={svc.id === selectedService.id}
+                        isPending={pendingSwitch?.id === svc.id}
+                        onSelect={() => requestSwitch(svc)}
+                      />
+                    ))}
+                  </>
+                ) : switcherResults.length === 0 ? (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">No results</p>
+                ) : (
+                  switcherResults.map((svc) => (
+                    <SwitcherRow
+                      key={svc.id}
+                      svc={svc}
+                      isCurrent={svc.id === selectedService.id}
+                      isPending={pendingSwitch?.id === svc.id}
+                      onSelect={() => requestSwitch(svc)}
+                    />
+                  ))
+                )}
+              </div>
+              {/* Confirmation bar */}
+              {pendingSwitch && (
+                <div className="border-t border-border bg-amber-500/10 px-3 py-2 flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <p className="text-[11px] text-amber-500 font-medium flex-1 truncate min-w-0">
+                    Switch to "{pendingSwitch.label}"?
+                  </p>
+                  <button
+                    onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }}
+                    className="text-[11px] text-muted-foreground hover:text-foreground shrink-0"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmSwitch}
+                    className="text-[11px] font-semibold text-amber-500 hover:text-amber-400 shrink-0"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div
             className="flex gap-2 items-center mt-2"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
@@ -1823,6 +1962,48 @@ function QuickAction({
         <Icon className={`h-3 w-3 ${iconColor ?? "text-foreground"}`} />
       </div>
       <span className="text-xs font-medium">{label}</span>
+    </button>
+  );
+}
+
+// ── Service Switcher Row ─────────────────────────────────────────────────────
+
+function SwitcherRow({
+  svc,
+  isCurrent,
+  isPending,
+  onSelect,
+}: {
+  svc: ServiceDate;
+  isCurrent: boolean;
+  isPending: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      onClick={onSelect}
+      disabled={isCurrent}
+      className={`w-full text-left px-3 py-2 flex items-center gap-2 transition-colors
+        ${isCurrent ? "bg-accent/40 cursor-default" : "hover:bg-accent"}
+        ${isPending ? "bg-amber-500/10" : ""}`}
+    >
+      <Calendar className={`h-3.5 w-3.5 shrink-0 ${isPending ? "text-amber-500" : "text-muted-foreground"}`} />
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs font-medium truncate ${isPending ? "text-amber-500" : ""}`}>{svc.label}</p>
+        <p className="text-[10px] text-muted-foreground">
+          {new Date(svc.date + "T00:00:00").toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+          })}
+        </p>
+      </div>
+      {isCurrent && (
+        <span className="text-[10px] font-semibold text-primary shrink-0">Active</span>
+      )}
+      {isPending && (
+        <span className="text-[10px] font-semibold text-amber-500 shrink-0">Tap confirm</span>
+      )}
     </button>
   );
 }

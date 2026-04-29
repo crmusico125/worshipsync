@@ -4,7 +4,7 @@ import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
-import { asc, desc, eq, ne, and, like, or, count } from 'drizzle-orm'
+import { asc, desc, eq, ne, and, like, or, count, lte, gte } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
 
@@ -335,6 +335,24 @@ ipcMain.handle('services:getAllWithCounts', () => {
       .where(eq(lineupItems.serviceDateId, service.id)).get()
     return { ...service, songCount: songRow?.count ?? 0, itemCount: totalRow?.count ?? 0 }
   })
+})
+
+ipcMain.handle('services:getRecent', () => {
+  const today = new Date().toISOString().split('T')[0]
+  return db.select().from(serviceDates)
+    .where(gte(serviceDates.date, today))
+    .orderBy(asc(serviceDates.date))
+    .limit(5)
+    .all()
+})
+
+ipcMain.handle('services:search', (_e, q: string) => {
+  const term = `%${q}%`
+  return db.select().from(serviceDates)
+    .where(or(like(serviceDates.label, term), like(serviceDates.date, term)))
+    .orderBy(desc(serviceDates.date))
+    .limit(10)
+    .all()
 })
 
 // ── Lineup IPC handlers ───────────────────────────────────────────────────────

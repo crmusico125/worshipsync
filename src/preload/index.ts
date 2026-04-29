@@ -80,6 +80,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
     updateStatus:  (id: number, status: string)               => ipcRenderer.invoke('services:updateStatus', id, status),
     delete:        (id: number)                               => ipcRenderer.invoke('services:delete', id),
     getAllWithCounts: ()                                       => ipcRenderer.invoke('services:getAllWithCounts'),
+    getRecent:       ()           => ipcRenderer.invoke('services:getRecent'),
+    search:          (q: string)  => ipcRenderer.invoke('services:search', q),
     },
 
   lineup: {
