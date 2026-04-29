@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getAll:        ()                                          => ipcRenderer.invoke('services:getAll'),
     getByDate:     (date: string)                              => ipcRenderer.invoke('services:getByDate', date),
     create:        (data: unknown)                             => ipcRenderer.invoke('services:create', data),
+    update:        (id: number, data: { label?: string; date?: string }) => ipcRenderer.invoke('services:update', id, data),
     updateStatus:  (id: number, status: string)               => ipcRenderer.invoke('services:updateStatus', id, status),
     delete:        (id: number)                               => ipcRenderer.invoke('services:delete', id),
     getAllWithCounts: ()                                       => ipcRenderer.invoke('services:getAllWithCounts'),

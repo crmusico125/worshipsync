@@ -102,6 +102,7 @@ declare global {
         getAllWithCounts:  () => Promise<(ServiceDate & { itemCount: number })[]>
         getByDate:        (date: string) => Promise<ServiceDate | null>
         create:           (data: unknown) => Promise<ServiceDate>
+        update:           (id: number, data: { label?: string; date?: string }) => Promise<ServiceDate>
         updateStatus:     (id: number, status: string) => Promise<ServiceDate>
         delete:           (id: number) => Promise<boolean>
       }

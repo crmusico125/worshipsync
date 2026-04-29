@@ -306,6 +306,14 @@ ipcMain.handle('services:updateStatus', (_e, id: number, status: 'empty' | 'in-p
   return db.select().from(serviceDates).where(eq(serviceDates.id, id)).get()
 })
 
+ipcMain.handle('services:update', (_e, id: number, data: { label?: string; date?: string }) => {
+  db.update(serviceDates)
+    .set({ ...data, updatedAt: new Date().toISOString() })
+    .where(eq(serviceDates.id, id))
+    .run()
+  return db.select().from(serviceDates).where(eq(serviceDates.id, id)).get()
+})
+
 ipcMain.handle('services:delete', (_e, id: number) => {
   db.delete(serviceDates).where(eq(serviceDates.id, id)).run()
   return true

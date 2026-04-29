@@ -42,6 +42,7 @@ interface ServiceStore {
   loadServices: () => Promise<void>
   selectService: (service: ServiceDate) => Promise<void>
   createService: (date: string, label: string) => Promise<ServiceDate>
+  updateService: (id: number, data: { label?: string; date?: string }) => Promise<void>
   updateStatus: (id: number, status: 'empty' | 'in-progress' | 'ready') => Promise<void>
   deleteService: (id: number) => Promise<void>
 
@@ -74,6 +75,13 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     const service = await window.worshipsync.services.create({ date, label, status: 'empty' }) as ServiceDate
     await get().loadServices()
     return service
+  },
+
+  updateService: async (id: number, data: { label?: string; date?: string }) => {
+    await window.worshipsync.services.update(id, data)
+    await get().loadServices()
+    const updated = get().services.find(s => s.id === id)
+    if (updated && get().selectedService?.id === id) set({ selectedService: updated })
   },
 
   updateStatus: async (id: number, status: 'empty' | 'in-progress' | 'ready') => {

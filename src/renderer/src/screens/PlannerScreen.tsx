@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react"
 import {
   Calendar, ChevronRight, Plus, Music2, CheckCircle2,
-  Circle, AlertCircle, Trash2, ArrowRight, Sparkles,
+  Circle, AlertCircle, Trash2, ArrowRight, Sparkles, Pencil,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,9 +57,10 @@ interface Props {
 
 export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   const {
-    services, loadServices, createService, deleteService,
+    services, loadServices, createService, deleteService, updateService,
   } = useServiceStore()
   const [showNew, setShowNew] = useState(false)
+  const [editingService, setEditingService] = useState<any | null>(null)
   const [initializing, setInitializing] = useState(false)
   const [songCounts, setSongCounts] = useState<Record<number, number>>({})
   const [itemCounts, setItemCounts] = useState<Record<number, number>>({})
@@ -130,6 +131,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
             itemCount={itemCounts[nextService.id] ?? 0}
             onPrepare={() => openInBuilder(nextService)}
             onGoLive={() => goLive(nextService)}
+            onEdit={() => setEditingService(nextService)}
           />
         )}
 
@@ -162,6 +164,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
                   service={service}
                   itemCount={itemCounts[service.id] ?? 0}
                   onOpen={() => openInBuilder(service)}
+                  onEdit={() => setEditingService(service)}
                   onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
                 />
               ))}
@@ -183,6 +186,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
                   itemCount={itemCounts[service.id] ?? 0}
                   past
                   onOpen={() => openInBuilder(service)}
+                  onEdit={() => setEditingService(service)}
                   onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
                 />
               ))}
@@ -200,6 +204,17 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
           }}
         />
       )}
+
+      {editingService && (
+        <EditServiceDialog
+          service={editingService}
+          onClose={() => setEditingService(null)}
+          onSave={async (data) => {
+            await updateService(editingService.id, data)
+            setEditingService(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -207,13 +222,14 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
 // ── Next Service Hero ────────────────────────────────────────────────────────
 
 function NextServiceHero({
-  service, songCount, itemCount, onPrepare, onGoLive,
+  service, songCount, itemCount, onPrepare, onGoLive, onEdit,
 }: {
   service: any
   songCount: number
   itemCount: number
   onPrepare: () => void
   onGoLive: () => void
+  onEdit: () => void
 }) {
   const daysAway = getDaysAway(service.date)
   const isToday = daysAway === 0
@@ -263,6 +279,9 @@ function NextServiceHero({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Edit service" onClick={onEdit}>
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
             {isToday ? (
               <>
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={onPrepare}>
@@ -341,12 +360,13 @@ function NextServiceHero({
 // ── Service Row ──────────────────────────────────────────────────────────────
 
 function ServiceRow({
-  service, itemCount, past, onOpen, onDelete,
+  service, itemCount, past, onOpen, onEdit, onDelete,
 }: {
   service: any
   itemCount: number
   past?: boolean
   onOpen: () => void
+  onEdit: () => void
   onDelete: () => void
 }) {
   const daysAway = getDaysAway(service.date)
@@ -381,6 +401,14 @@ function ServiceRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost" size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          title="Edit"
+          onClick={(e) => { e.stopPropagation(); onEdit() }}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
         <Button
           variant="ghost" size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-destructive"
@@ -456,6 +484,82 @@ function EmptyState({
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Edit Service Dialog ──────────────────────────────────────────────────────
+
+function EditServiceDialog({
+  service, onClose, onSave,
+}: {
+  service: any
+  onClose: () => void
+  onSave: (data: { label: string; date: string }) => Promise<void>
+}) {
+  const [label, setLabel] = useState(service.label)
+  const [date, setDate] = useState(service.date)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  const save = async () => {
+    if (!date) { setError("Please pick a date"); return }
+    if (!label.trim()) { setError("Please enter a service name"); return }
+    setSaving(true)
+    try {
+      await onSave({ label: label.trim(), date })
+    } catch (e: any) {
+      setError(e?.message?.includes("UNIQUE") ? "A service already exists for this date." : "Failed to save.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent hideClose className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl" style={{ width: 420, maxWidth: "95vw" }}>
+        <div className="flex flex-col bg-background text-foreground">
+          <div className="px-6 pt-5 pb-1">
+            <DialogTitle className="text-lg font-bold">Edit service</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">Update the name or date for this service.</p>
+          </div>
+
+          <div className="px-6 py-5 flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Service name</label>
+              <Input
+                autoFocus
+                value={label}
+                onChange={(e) => { setLabel(e.target.value); setError("") }}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Date</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="date"
+                  className="pl-9"
+                  value={date}
+                  onChange={(e) => { setDate(e.target.value); setError("") }}
+                />
+              </div>
+            </div>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={save} className="gap-1.5">
+              <Pencil className="h-3.5 w-3.5" />
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

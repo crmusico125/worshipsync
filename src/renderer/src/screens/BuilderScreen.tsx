@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useServiceStore } from "../store/useServiceStore"
@@ -114,11 +115,12 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
     removeSongFromLineup, toggleSection, loadServices, selectService,
-    services, reorderLineup, updateStatus,
+    services, reorderLineup, updateStatus, updateService,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
   const [showLibrary, setShowLibrary] = useState(false)
+  const [showEditService, setShowEditService] = useState(false)
   const [showAddSong, setShowAddSong] = useState(false)
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
@@ -387,17 +389,26 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
 
       {/* ── Top bar: service info + actions ──────────────────────────── */}
       <div className="h-14 border-b border-border flex items-center px-5 shrink-0 gap-4">
-        <div className="min-w-0">
-          <h1 className="text-sm font-bold text-foreground truncate">
-            {selectedService.label}
-          </h1>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {new Date(selectedService.date + "T00:00:00").toLocaleDateString("en-US", {
-              weekday: "long", month: "long", day: "numeric",
-            })}
-            {" · "}
-            {lineup.length} {lineup.length === 1 ? "item" : "items"}
-          </p>
+        <div className="min-w-0 flex items-center gap-2">
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold text-foreground truncate">
+              {selectedService.label}
+            </h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {new Date(selectedService.date + "T00:00:00").toLocaleDateString("en-US", {
+                weekday: "long", month: "long", day: "numeric",
+              })}
+              {" · "}
+              {lineup.length} {lineup.length === 1 ? "item" : "items"}
+            </p>
+          </div>
+          <button
+            onClick={() => setShowEditService(true)}
+            title="Edit service name / date"
+            className="shrink-0 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
@@ -810,6 +821,17 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
           onSave={handleLyricsSave}
         />
       )}
+      {showEditService && selectedService && (
+        <EditServiceModal
+          label={selectedService.label}
+          date={selectedService.date}
+          onClose={() => setShowEditService(false)}
+          onSave={async (label, date) => {
+            await updateService(selectedService.id, { label, date })
+            setShowEditService(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -1201,5 +1223,80 @@ function LayoutTab({ theme, onChange }: {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── EditServiceModal ──────────────────────────────────────────────────────────
+
+function EditServiceModal({
+  label: initialLabel, date: initialDate, onClose, onSave,
+}: {
+  label: string
+  date: string
+  onClose: () => void
+  onSave: (label: string, date: string) => Promise<void>
+}) {
+  const [label, setLabel] = useState(initialLabel)
+  const [date, setDate] = useState(initialDate)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  const save = async () => {
+    if (!label.trim()) { setError("Service name is required"); return }
+    if (!date) { setError("Date is required"); return }
+    setSaving(true)
+    try {
+      await onSave(label.trim(), date)
+    } catch (e: any) {
+      setError(e?.message?.includes("UNIQUE") ? "A service already exists for this date." : "Failed to save.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent hideClose className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl" style={{ width: 420, maxWidth: "95vw" }}>
+        <div className="flex flex-col bg-background text-foreground">
+          <div className="px-6 pt-5 pb-1">
+            <DialogTitle className="text-lg font-bold">Edit service</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">Update the name or date for this service.</p>
+          </div>
+
+          <div className="px-6 py-5 flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Service name</label>
+              <Input
+                autoFocus
+                value={label}
+                onChange={(e) => { setLabel(e.target.value); setError("") }}
+                onKeyDown={(e) => e.key === "Enter" && save()}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-foreground">Date</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="date"
+                  className="pl-9"
+                  value={date}
+                  onChange={(e) => { setDate(e.target.value); setError("") }}
+                />
+              </div>
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" disabled={saving} onClick={save} className="gap-1.5">
+              <Pencil className="h-3.5 w-3.5" />
+              {saving ? "Saving…" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
