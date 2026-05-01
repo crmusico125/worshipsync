@@ -1644,8 +1644,8 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {/* Confidence monitor */}
-          <div className="mt-2">
+          {/* Confidence monitor — only for lyric slides */}
+          {currentSong && currentSong.itemType !== "countdown" && currentSong.artist !== "Media" && <div className="mt-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
               Confidence Monitor
             </p>
@@ -1687,7 +1687,7 @@ export default function PresenterDashboard({
                 {confidenceOpen ? "ON" : "OFF"}
               </button>
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Scrollable content */}
