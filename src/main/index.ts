@@ -121,7 +121,12 @@ function startStageServer(port = 4040): Promise<boolean> {
 }
 
 function stopStageServer() {
-  stageClients.forEach(c => { try { c.res.end() } catch { /* ignore */ } })
+  // Tell clients to disconnect cleanly before closing — prevents auto-reconnect loop
+  const shutdownLine = `data: ${JSON.stringify({ type: 'shutdown' })}\n\n`
+  stageClients.forEach(c => {
+    try { c.res.write(shutdownLine) } catch { /* ignore */ }
+    try { c.res.end() } catch { /* ignore */ }
+  })
   stageClients = []
   stageServer?.close()
   stageServer = null
@@ -228,8 +233,9 @@ tickClock();
 setInterval(tickClock,5000);
 
 // ── SSE ──
+var es=null;
 function connect(){
-  var es=new EventSource('/events');
+  es=new EventSource('/events');
   es.onopen=function(){$('dot').classList.remove('off');clearTimeout(reconnTimer)};
   es.onmessage=function(e){handle(JSON.parse(e.data))};
   es.onerror=function(){$('dot').classList.add('off');es.close();reconnTimer=setTimeout(connect,3000)};
@@ -240,6 +246,18 @@ function handle(ev){
   else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
   else if(ev.type==='blank'){setBlank(ev.isBlank)}
   else if(ev.type==='countdown'){doCountdown(ev.data)}
+  else if(ev.type==='shutdown'){
+    clearTimeout(reconnTimer);
+    if(typeof es!=='undefined')es.close();
+    $('dot').classList.add('off');
+    $('song-title').textContent='Stage display stopped';
+    $('section-badge').style.display='none';
+    $('lyrics').style.display='none';
+    $('next-wrap').style.display='none';
+    $('empty').style.display='block';
+    $('empty').querySelector('h2').textContent='Stage display is off';
+    $('empty').querySelector('p').textContent='The operator has stopped the stage display.';
+  }
 }
 
 function showSlide(p){
