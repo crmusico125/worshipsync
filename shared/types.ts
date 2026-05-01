@@ -44,6 +44,8 @@ export interface SlidePayload {
   slideIndex?: number
   totalSlides?: number
   backgroundPath?: string | null
+  nextLines?: string[]
+  nextSectionLabel?: string
   theme?: {
     fontFamily: string
     fontSize: number

@@ -130,6 +130,11 @@ contextBridge.exposeInMainWorld('worshipsync', {
     export: () => ipcRenderer.invoke('data:export'),
     import: () => ipcRenderer.invoke('data:import'),
   },
+  stageDisplay: {
+    start:     (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
+    stop:      ()              => ipcRenderer.invoke('stageDisplay:stop'),
+    getStatus: ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
+  },
 })
 
 interface SlidePayload {

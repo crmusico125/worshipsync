@@ -145,6 +145,11 @@ declare global {
         set:             (data: Record<string, any>) => Promise<boolean>
         getTodayService: () => Promise<TodayServiceResult | null>
       }
+      stageDisplay: {
+        start:     (port?: number) => Promise<{ ok: boolean; url: string; port: number }>
+        stop:      ()              => Promise<boolean>
+        getStatus: ()              => Promise<{ running: boolean; url: string; port: number; clients: number; localIP: string }>
+      }
     }
   }
 }

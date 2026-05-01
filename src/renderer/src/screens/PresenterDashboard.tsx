@@ -378,6 +378,24 @@ export default function PresenterDashboard({
       setActiveSlideIdx(slideIdx);
       setIsBlank(false);
 
+      // Compute next slide for stage display
+      let nextLines: string[] | undefined;
+      let nextSectionLabel: string | undefined;
+      const nextSlide = song.slides[slideIdx + 1];
+      if (nextSlide && nextSlide.sectionType !== "blank" && nextSlide.lines.filter(Boolean).length) {
+        nextLines = nextSlide.lines;
+        nextSectionLabel = nextSlide.sectionLabel;
+      }
+      if (!nextLines) {
+        // Fall through to first slide of next song
+        const nextSong = liveSongs[songIdx + 1];
+        const firstNextSlide = nextSong?.slides.find((s) => s.sectionType !== "blank");
+        if (firstNextSlide && firstNextSlide.lines.filter(Boolean).length) {
+          nextLines = firstNextSlide.lines;
+          nextSectionLabel = `${nextSong!.title} \u2014 ${firstNextSlide.sectionLabel}`;
+        }
+      }
+
       if (slide.sectionType === "blank") {
         window.worshipsync.slide.blank(true);
         setIsBlank(true);
@@ -392,6 +410,8 @@ export default function PresenterDashboard({
           slideIndex: slide.globalIndex,
           totalSlides: song.slides.length,
           backgroundPath: bg,
+          nextLines,
+          nextSectionLabel,
           theme: {
             fontFamily: theme.fontFamily,
             fontSize:

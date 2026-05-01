@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain, shell, screen, dialog, powerSaveBlocker } 
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
+import { createServer } from 'http'
+import type { Server, ServerResponse } from 'http'
+import { networkInterfaces } from 'os'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, ne, and, like, or, count, lte, gte } from 'drizzle-orm'
@@ -12,6 +15,244 @@ let controlWindow: BrowserWindow | null = null
 let projectionWindow: BrowserWindow | null = null
 let powerSaveBlockerId: number | null = null
 let movingProjection = false  // true while doing an intentional display switch
+
+// ── Stage display (local web server) ──────────────────────────────────────────
+
+let stageServer: Server | null = null
+let stageClients: ServerResponse[] = []
+let stageSlide: unknown = null
+let stageBlank = false
+let stageCountdown: unknown = null
+let stagePort = 4040
+
+function getLocalIP(): string {
+  for (const ifaces of Object.values(networkInterfaces())) {
+    for (const iface of ifaces ?? []) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address
+    }
+  }
+  return 'localhost'
+}
+
+function broadcastStage(event: unknown) {
+  const line = `data: ${JSON.stringify(event)}\n\n`
+  stageClients = stageClients.filter(c => { try { c.write(line); return true } catch { return false } })
+}
+
+function startStageServer(port = 4040): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (stageServer) { resolve(true); return }
+    stagePort = port
+    const server = createServer((req, res) => {
+      if (req.url === '/events') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'Access-Control-Allow-Origin': '*',
+        })
+        stageClients.push(res)
+        res.write(`data: ${JSON.stringify({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown })}\n\n`)
+        req.on('close', () => { stageClients = stageClients.filter(c => c !== res) })
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(STAGE_DISPLAY_HTML)
+      }
+    })
+    server.once('error', (err) => {
+      console.error('[stage] failed to start:', err)
+      stageServer = null
+      resolve(false)
+    })
+    server.listen(port, () => {
+      stageServer = server
+      console.log(`[stage] listening on http://localhost:${port}`)
+      resolve(true)
+    })
+  })
+}
+
+function stopStageServer() {
+  stageClients.forEach(c => { try { c.end() } catch { /* ignore */ } })
+  stageClients = []
+  stageServer?.close()
+  stageServer = null
+}
+
+const STAGE_DISPLAY_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stage Display — WorshipSync</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
+
+/* ── Top bar ── */
+#top{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.03);min-height:52px;flex-shrink:0}
+#song-title{font-size:13px;font-weight:600;color:#c4c4cc;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#section-badge{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(139,92,246,.18);color:#a78bfa;border:1px solid rgba(139,92,246,.3);border-radius:5px;padding:3px 9px;white-space:nowrap;flex-shrink:0;display:none}
+#clock{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:#fff;letter-spacing:-.01em;flex-shrink:0;min-width:80px;text-align:right}
+
+/* ── Current slide (large, ~60% height) ── */
+#current-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 40px 20px}
+#lyrics{font-size:clamp(26px,5.5vw,72px);font-weight:700;line-height:1.35;text-align:center;color:#ffffff;letter-spacing:-.015em;max-width:960px;display:none}
+#lyrics div{padding-bottom:.1em}
+#empty{text-align:center;color:rgba(255,255,255,.18)}
+#empty h2{font-size:18px;font-weight:600;margin-bottom:8px}
+#empty p{font-size:13px;line-height:1.5}
+#countdown-wrap{display:none;text-align:center}
+#countdown{font-size:clamp(60px,15vw,140px);font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;font-family:'SF Mono','Fira Code','Fira Mono',monospace}
+#countdown-label{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-top:10px}
+
+/* ── Next slide (smaller, ~30% height) ── */
+#next-wrap{flex-shrink:0;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:none;flex-direction:column}
+#next-header{display:flex;align-items:center;gap:8px;padding:8px 20px 6px}
+#next-label{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.3)}
+#next-section{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(139,92,246,.7)}
+#next-lyrics{padding:0 20px 14px;font-size:clamp(14px,2.2vw,28px);font-weight:500;line-height:1.45;text-align:center;color:rgba(255,255,255,.45);max-height:30vh;overflow:hidden}
+#next-lyrics div{padding-bottom:.08em}
+
+/* ── Bottom bar ── */
+#bottom{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-top:1px solid rgba(255,255,255,.06);min-height:38px;flex-shrink:0}
+#slide-pos{font-size:11px;color:rgba(255,255,255,.25);font-variant-numeric:tabular-nums}
+#dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
+#dot.off{background:#ef4444;animation:none}
+
+/* ── Blank overlay ── */
+#blank-overlay{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s ease;z-index:20;display:flex;align-items:center;justify-content:center}
+#blank-overlay.on{opacity:1}
+#blank-text{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.1)}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <div id="song-title">WorshipSync Stage Display</div>
+  <div id="section-badge"></div>
+  <div id="clock"></div>
+</div>
+
+<div id="current-wrap">
+  <div id="empty"><h2>Waiting for slides…</h2><p>The stage display will update<br>when the operator advances slides.</p></div>
+  <div id="lyrics"></div>
+  <div id="countdown-wrap">
+    <div id="countdown">00:00</div>
+    <div id="countdown-label">Until Service Starts</div>
+  </div>
+</div>
+
+<div id="next-wrap">
+  <div id="next-header">
+    <span id="next-label">Next</span>
+    <span id="next-section"></span>
+  </div>
+  <div id="next-lyrics"></div>
+</div>
+
+<div id="bottom">
+  <div id="slide-pos"></div>
+  <div id="dot" class="off"></div>
+</div>
+
+<div id="blank-overlay"><div id="blank-text">Screen Blank</div></div>
+
+<script>
+var cdTimer=null,reconnTimer=null,clockTimer=null;
+function $(id){return document.getElementById(id)}
+
+// ── Clock ──
+function tickClock(){
+  var now=new Date();
+  var h=now.getHours(),m=now.getMinutes();
+  var ampm=h>=12?'PM':'AM';
+  h=h%12||12;
+  $('clock').textContent=h+':'+(m<10?'0':'')+m+' '+ampm;
+}
+tickClock();
+setInterval(tickClock,5000);
+
+// ── SSE ──
+function connect(){
+  var es=new EventSource('/events');
+  es.onopen=function(){$('dot').classList.remove('off');clearTimeout(reconnTimer)};
+  es.onmessage=function(e){handle(JSON.parse(e.data))};
+  es.onerror=function(){$('dot').classList.add('off');es.close();reconnTimer=setTimeout(connect,3000)};
+}
+
+function handle(ev){
+  if(ev.type==='init'){if(ev.slide)showSlide(ev.slide);if(ev.blank)setBlank(ev.blank);if(ev.countdown)doCountdown(ev.countdown)}
+  else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
+  else if(ev.type==='blank'){setBlank(ev.isBlank)}
+  else if(ev.type==='countdown'){doCountdown(ev.data)}
+}
+
+function showSlide(p){
+  var lines=p.lines||[];
+  $('empty').style.display='none';
+  $('countdown-wrap').style.display='none';
+
+  if(!lines.length){
+    $('lyrics').style.display='none';
+    $('empty').style.display='block';
+  } else {
+    $('lyrics').style.display='block';
+    $('lyrics').innerHTML=lines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+  }
+
+  // Song info
+  $('song-title').textContent=(p.songTitle||'')+(p.artist?'  \u2014  '+p.artist:'');
+  var sec=p.sectionLabel||'';
+  $('section-badge').textContent=sec;
+  $('section-badge').style.display=sec?'inline-block':'none';
+
+  // Slide counter
+  $('slide-pos').textContent=(p.slideIndex!=null&&p.totalSlides!=null)?(p.slideIndex+1)+' / '+p.totalSlides:'';
+
+  // Next slide
+  var nextLines=p.nextLines||[];
+  if(nextLines.length){
+    $('next-wrap').style.display='flex';
+    $('next-section').textContent=p.nextSectionLabel||'';
+    $('next-lyrics').innerHTML=nextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+  } else {
+    $('next-wrap').style.display='none';
+  }
+}
+
+function setBlank(b){$('blank-overlay').classList.toggle('on',!!b)}
+
+function doCountdown(d){
+  clearCD();
+  $('empty').style.display='none';
+  $('lyrics').style.display='none';
+  $('next-wrap').style.display='none';
+  $('countdown-wrap').style.display='block';
+  $('song-title').textContent='Service Starting';
+  $('section-badge').style.display='none';
+  if(!d.running){$('countdown').textContent='00:00';return}
+  var target=new Date(d.targetTime).getTime();
+  function tick(){
+    var diff=target-Date.now();
+    if(diff<=0){$('countdown').textContent='Starting!';return}
+    var m=Math.floor(diff/60000),s=Math.floor((diff%60000)/1000);
+    $('countdown').textContent=pad(m)+':'+pad(s);
+    cdTimer=setTimeout(tick,500);
+  }
+  tick();
+}
+
+function clearCD(){clearTimeout(cdTimer);cdTimer=null;$('countdown-wrap').style.display='none'}
+function pad(n){return String(n).padStart(2,'0')}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+connect();
+</script>
+</body>
+</html>`
 
 function createControlWindow(): void {
   controlWindow = new BrowserWindow({
@@ -123,20 +364,20 @@ function createProjectionWindow(displayId?: number): void {
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.on('slide:show', (_event, payload) => {
-  console.log('[ipc] slide:show received, projectionWindow exists:', !!projectionWindow, 'destroyed:', projectionWindow?.isDestroyed(), 'webContents loading:', projectionWindow?.webContents?.isLoading())
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:show', payload)
-    console.log('[ipc] slide:show forwarded to projection window')
-  } else {
-    console.warn('[ipc] slide:show NOT forwarded - no projection window')
   }
+  stageSlide = payload
+  stageBlank = false
+  broadcastStage({ type: 'slide', payload })
 })
 
 ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
-  console.log('[ipc] slide:blank received:', isBlank, 'projectionWindow exists:', !!projectionWindow)
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:blank', isBlank)
   }
+  stageBlank = isBlank
+  broadcastStage({ type: 'blank', isBlank })
 })
 
 ipcMain.on('slide:logo', (_event, show: boolean) => {
@@ -147,6 +388,8 @@ ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: bool
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:countdown', data)
   }
+  stageCountdown = data
+  broadcastStage({ type: 'countdown', data })
 })
 
 ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => {
@@ -770,6 +1013,28 @@ ipcMain.handle('app:getTodayService', () => {
   return { service: upcoming, daysAway }
 })
 
+// ── Stage display IPC ─────────────────────────────────────────────────────────
+
+ipcMain.handle('stageDisplay:start', async (_e, port: number = 4040) => {
+  const ok = await startStageServer(port)
+  if (ok) writeAppState({ stageDisplayEnabled: true, stageDisplayPort: port })
+  return { ok, url: `http://${getLocalIP()}:${stagePort}`, port: stagePort }
+})
+
+ipcMain.handle('stageDisplay:stop', () => {
+  stopStageServer()
+  writeAppState({ stageDisplayEnabled: false })
+  return true
+})
+
+ipcMain.handle('stageDisplay:getStatus', () => ({
+  running: !!stageServer,
+  url: `http://${getLocalIP()}:${stagePort}`,
+  port: stagePort,
+  clients: stageClients.length,
+  localIP: getLocalIP(),
+}))
+
 // ── Data export / import ──────────────────────────────────────────────────────
 
 ipcMain.handle('data:export', async () => {
@@ -916,6 +1181,12 @@ app.whenReady().then(() => {
 
   createControlWindow()
 
+  // Auto-start stage display if previously enabled
+  const savedState = readAppState()
+  if (savedState.stageDisplayEnabled) {
+    startStageServer(savedState.stageDisplayPort ?? 4040).catch(() => {})
+  }
+
   // Notify renderer when displays are added or removed
   const notifyDisplaysChanged = () => {
     const primary = screen.getPrimaryDisplay()
@@ -939,6 +1210,7 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  stopStageServer()
   if (process.platform !== 'darwin') {
     app.quit()
   }
