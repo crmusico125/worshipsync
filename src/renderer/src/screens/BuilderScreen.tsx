@@ -78,8 +78,19 @@ function buildSlides(
     ? sections.filter(s => selectedIds.includes(s.id))
     : sections
   for (const sec of filtered) {
-    const lines = sec.lyrics.split("\n").filter(l => l.trim())
-    if (lines.length === 0) {
+    // Split into paragraphs on blank lines — each paragraph boundary forces a new slide
+    const paragraphs: string[][] = []
+    let current: string[] = []
+    for (const line of sec.lyrics.split("\n")) {
+      if (line.trim() === "") {
+        if (current.length > 0) { paragraphs.push(current); current = [] }
+      } else {
+        current.push(line)
+      }
+    }
+    if (current.length > 0) paragraphs.push(current)
+
+    if (paragraphs.length === 0) {
       slides.push({
         lines: [""],
         sectionLabel: sec.label,
@@ -88,13 +99,15 @@ function buildSlides(
       })
       continue
     }
-    for (let i = 0; i < lines.length; i += maxLines) {
-      slides.push({
-        lines: lines.slice(i, i + maxLines),
-        sectionLabel: sec.label,
-        sectionType: sec.type,
-        sectionId: sec.id,
-      })
+    for (const para of paragraphs) {
+      for (let i = 0; i < para.length; i += maxLines) {
+        slides.push({
+          lines: para.slice(i, i + maxLines),
+          sectionLabel: sec.label,
+          sectionType: sec.type,
+          sectionId: sec.id,
+        })
+      }
     }
   }
   return slides

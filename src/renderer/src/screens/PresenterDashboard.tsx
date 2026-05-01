@@ -103,8 +103,19 @@ function buildSlidesForSong(
   const slides: Slide[] = [];
   let globalIdx = 0;
   for (const sec of sections) {
-    const lines = sec.lyrics.split("\n").filter((l) => l.trim());
-    if (lines.length === 0) {
+    // Split into paragraphs on blank lines — each paragraph boundary forces a new slide
+    const paragraphs: string[][] = [];
+    let current: string[] = [];
+    for (const line of sec.lyrics.split("\n")) {
+      if (line.trim() === "") {
+        if (current.length > 0) { paragraphs.push(current); current = []; }
+      } else {
+        current.push(line);
+      }
+    }
+    if (current.length > 0) paragraphs.push(current);
+
+    if (paragraphs.length === 0) {
       // Media/blank slides: create one slide with empty line so background shows
       slides.push({
         lines: [""],
@@ -115,14 +126,16 @@ function buildSlidesForSong(
       });
       continue;
     }
-    for (let i = 0; i < lines.length; i += maxLines) {
-      slides.push({
-        lines: lines.slice(i, i + maxLines),
-        sectionLabel: sec.label,
-        sectionType: sec.type,
-        sectionId: sec.id,
-        globalIndex: globalIdx++,
-      });
+    for (const para of paragraphs) {
+      for (let i = 0; i < para.length; i += maxLines) {
+        slides.push({
+          lines: para.slice(i, i + maxLines),
+          sectionLabel: sec.label,
+          sectionType: sec.type,
+          sectionId: sec.id,
+          globalIndex: globalIdx++,
+        });
+      }
     }
   }
   slides.push({

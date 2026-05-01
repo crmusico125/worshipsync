@@ -141,10 +141,23 @@ function buildSlides(lyricsText: string, maxLines = DEFAULT_SETTINGS.maxLinesPer
   const sections = textToSections(lyricsText)
   const result: { label: string; type: string; abbr: string; lines: string[] }[] = []
   for (const sec of sections) {
-    const lines = sec.lyrics.split("\n").filter(Boolean)
+    // Split into paragraphs on blank lines — each boundary forces a new slide
+    const paragraphs: string[][] = []
+    let current: string[] = []
+    for (const line of sec.lyrics.split("\n")) {
+      if (line.trim() === "") {
+        if (current.length > 0) { paragraphs.push(current); current = [] }
+      } else {
+        current.push(line)
+      }
+    }
+    if (current.length > 0) paragraphs.push(current)
+
     const chunks: string[][] = []
-    for (let i = 0; i < lines.length; i += maxLines) {
-      chunks.push(lines.slice(i, i + maxLines))
+    for (const para of paragraphs) {
+      for (let i = 0; i < para.length; i += maxLines) {
+        chunks.push(para.slice(i, i + maxLines))
+      }
     }
     if (chunks.length === 0) continue
     const abbr = SECTION_ABBREV[sec.type] ?? sec.type.charAt(0).toUpperCase()
