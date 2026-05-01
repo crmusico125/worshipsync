@@ -23,7 +23,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          projection: resolve('src/renderer/projection.html')
+          projection: resolve('src/renderer/projection.html'),
+          confidence: resolve('src/renderer/confidence.html')
         }
       }
     },

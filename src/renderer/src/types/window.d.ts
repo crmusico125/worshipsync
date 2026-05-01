@@ -150,6 +150,14 @@ declare global {
         stop:      ()              => Promise<boolean>
         getStatus: ()              => Promise<{ running: boolean; url: string; mdnsUrl: string; port: number; clients: number; localIP: string }>
       }
+      confidence: {
+        open:     (displayId?: number) => void
+        move:     (displayId: number)  => void
+        close:    ()                   => void
+        isOpen:   ()                   => Promise<boolean>
+        ready:    ()                   => void
+        onClosed: (cb: () => void)     => () => void
+      }
     }
   }
 }

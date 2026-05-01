@@ -15,6 +15,9 @@ import { seedIfEmpty } from './db/seed'
 
 let controlWindow: BrowserWindow | null = null
 let projectionWindow: BrowserWindow | null = null
+let confidenceWindow: BrowserWindow | null = null
+let confidenceWasOpen = false       // true if confidence was open when display disconnected
+let confidenceLastDisplayId: number | undefined  // last display it was opened on
 let powerSaveBlockerId: number | null = null
 let movingProjection = false  // true while doing an intentional display switch
 
@@ -385,11 +388,61 @@ function createProjectionWindow(displayId?: number): void {
   })
 }
 
+function createConfidenceWindow(displayId?: number): void {
+  confidenceLastDisplayId = displayId
+  confidenceWasOpen = false
+
+  const displays = screen.getAllDisplays()
+  const target = displayId
+    ? displays.find(d => d.id === displayId)
+    : displays.find(d => d.id !== screen.getPrimaryDisplay().id)
+  const targetDisplay = target ?? screen.getPrimaryDisplay()
+  const { x, y, width, height } = targetDisplay.bounds
+
+  confidenceWindow = new BrowserWindow({
+    x,
+    y,
+    width,
+    height,
+    title: 'WorshipSync — Confidence Monitor',
+    backgroundColor: '#080810',
+    fullscreen: !!target,
+    frame: !target,
+    alwaysOnTop: !!target,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: false,
+    },
+    show: false,
+  })
+
+  confidenceWindow.on('ready-to-show', () => {
+    confidenceWindow?.show()
+  })
+
+  confidenceWindow.on('closed', () => {
+    confidenceWindow = null
+    controlWindow?.webContents.send('window:confidenceClosed')
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    confidenceWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/confidence.html`)
+  } else {
+    confidenceWindow.loadFile(join(__dirname, '../renderer/confidence.html'))
+  }
+}
+
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 
 ipcMain.on('slide:show', (_event, payload) => {
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:show', payload)
+  }
+  if (confidenceWindow && !confidenceWindow.isDestroyed()) {
+    confidenceWindow.webContents.send('slide:show', payload)
   }
   stageSlide = payload
   stageBlank = false
@@ -399,6 +452,9 @@ ipcMain.on('slide:show', (_event, payload) => {
 ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:blank', isBlank)
+  }
+  if (confidenceWindow && !confidenceWindow.isDestroyed()) {
+    confidenceWindow.webContents.send('slide:blank', isBlank)
   }
   stageBlank = isBlank
   broadcastStage({ type: 'blank', isBlank })
@@ -411,6 +467,9 @@ ipcMain.on('slide:logo', (_event, show: boolean) => {
 ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: boolean }) => {
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:countdown', data)
+  }
+  if (confidenceWindow && !confidenceWindow.isDestroyed()) {
+    confidenceWindow.webContents.send('slide:countdown', data)
   }
   stageCountdown = data
   broadcastStage({ type: 'countdown', data })
@@ -425,6 +484,46 @@ ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => 
 ipcMain.on('slide:videoSeek', (_event, time: number) => {
   if (projectionWindow && !projectionWindow.isDestroyed()) {
     projectionWindow.webContents.send('slide:videoSeek', time)
+  }
+})
+
+// ── Confidence monitor IPC handlers ──────────────────────────────────────────
+
+ipcMain.on('window:openConfidence', (_event, displayId?: number) => {
+  if (!confidenceWindow || confidenceWindow.isDestroyed()) {
+    createConfidenceWindow(displayId)
+  } else {
+    confidenceWindow.focus()
+  }
+})
+
+ipcMain.on('window:moveConfidence', (_event, displayId: number) => {
+  if (confidenceWindow && !confidenceWindow.isDestroyed()) {
+    confidenceWindow.once('closed', () => createConfidenceWindow(displayId))
+    confidenceWindow.close()
+  } else {
+    createConfidenceWindow(displayId)
+  }
+})
+
+ipcMain.on('window:closeConfidence', () => {
+  confidenceWindow?.close()
+  confidenceWindow = null
+})
+
+ipcMain.handle('window:getConfidenceOpen', () => {
+  return !!(confidenceWindow && !confidenceWindow.isDestroyed())
+})
+
+// Restore last known state when confidence window (re)loads
+ipcMain.on('confidence:ready', () => {
+  if (!confidenceWindow || confidenceWindow.isDestroyed()) return
+  if (stageBlank) {
+    confidenceWindow.webContents.send('slide:blank', true)
+  } else if (stageCountdown && (stageCountdown as { running?: boolean }).running) {
+    confidenceWindow.webContents.send('slide:countdown', stageCountdown)
+  } else if (stageSlide) {
+    confidenceWindow.webContents.send('slide:show', stageSlide)
   }
 })
 
@@ -1224,8 +1323,21 @@ app.whenReady().then(() => {
     }))
     controlWindow?.webContents.send('window:displaysChanged', displays)
   }
-  screen.on('display-added', notifyDisplaysChanged)
-  screen.on('display-removed', notifyDisplaysChanged)
+
+  screen.on('display-removed', () => {
+    // Snapshot whether confidence was open before Electron closes the window
+    confidenceWasOpen = !!(confidenceWindow && !confidenceWindow.isDestroyed())
+    notifyDisplaysChanged()
+  })
+
+  screen.on('display-added', () => {
+    notifyDisplaysChanged()
+    // Auto-reopen confidence window on the reconnected display
+    if (confidenceWasOpen && (!confidenceWindow || confidenceWindow.isDestroyed())) {
+      confidenceWasOpen = false
+      setTimeout(() => createConfidenceWindow(confidenceLastDisplayId), 800)
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

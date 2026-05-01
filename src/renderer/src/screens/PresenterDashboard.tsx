@@ -180,6 +180,8 @@ export default function PresenterDashboard({
   const [selectedDisplayId, setSelectedDisplayId] = useState<
     number | undefined
   >(undefined);
+  const [confidenceOpen, setConfidenceOpen] = useState(false);
+  const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
   const slideGridRef = useRef<HTMLDivElement>(null);
 
   // ── Service switcher ─────────────────────────────────────────────────────
@@ -225,6 +227,7 @@ export default function PresenterDashboard({
       setDisplays(d);
       const ext = d.find((x) => !x.isPrimary);
       setSelectedDisplayId(ext?.id ?? d[0]?.id);
+      setSelectedConfidenceDisplayId(ext?.id ?? d[0]?.id);
     });
     window.worshipsync.themes.getDefault().then((t: any) => {
       setDefaultTheme(t);
@@ -256,12 +259,22 @@ export default function PresenterDashboard({
     const cleanupDisplays = window.worshipsync.window.onDisplaysChanged((d) => {
       setDisplays(d);
       setSelectedDisplayId((prev) => {
-        // Keep current selection if it still exists, otherwise pick the first external
         if (prev !== undefined && d.find((x) => x.id === prev)) return prev;
         return d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
       });
     });
-    return cleanupDisplays;
+
+    // Check if confidence window is already open (e.g. survived a navigation)
+    window.worshipsync.confidence.isOpen().then((open) => setConfidenceOpen(open)).catch(() => {});
+
+    const cleanupConfidence = window.worshipsync.confidence.onClosed(() => {
+      setConfidenceOpen(false);
+    });
+
+    return () => {
+      cleanupDisplays();
+      cleanupConfidence();
+    };
   }, []);
 
   // ── Build live songs ─────────────────────────────────────────────────────
@@ -1604,28 +1617,76 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {/* Display selector */}
-          <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-md px-3 py-2">
-            <Cast className="h-4 w-4 text-primary shrink-0" />
-            <select
-              className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
-              value={selectedDisplayId ?? ""}
-              onChange={(e) => {
-                const id = Number(e.target.value)
-                setSelectedDisplayId(id)
-                if (projectionOpen) window.worshipsync.window.moveProjection(id)
-              }}
-            >
-              {displays.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label}
-                  {d.isPrimary ? " (Primary)" : ""} — {d.width}x{d.height}
-                </option>
-              ))}
-            </select>
-            <span className="text-[10px] font-bold text-primary shrink-0">
-              ACTIVE
-            </span>
+          {/* Projection display */}
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
+              Projection
+            </p>
+            <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-md px-3 py-2">
+              <Cast className="h-4 w-4 text-primary shrink-0" />
+              <select
+                className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
+                value={selectedDisplayId ?? ""}
+                onChange={(e) => {
+                  const id = Number(e.target.value)
+                  setSelectedDisplayId(id)
+                  if (projectionOpen) window.worshipsync.window.moveProjection(id)
+                }}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                    {d.isPrimary ? " (Primary)" : ""} — {d.width}x{d.height}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] font-bold text-primary shrink-0">ACTIVE</span>
+            </div>
+          </div>
+
+          {/* Confidence monitor */}
+          <div className="mt-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
+              Confidence Monitor
+            </p>
+            <div className="flex items-center gap-2 rounded-md px-3 py-2 border border-border bg-background/40">
+              <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
+              <select
+                className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
+                value={selectedConfidenceDisplayId ?? ""}
+                onChange={(e) => {
+                  const id = Number(e.target.value) || undefined
+                  setSelectedConfidenceDisplayId(id)
+                  if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id)
+                }}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                    {d.isPrimary ? " (Primary)" : ""} — {d.width}x{d.height}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => {
+                  if (confidenceOpen) {
+                    window.worshipsync.confidence.close()
+                    setConfidenceOpen(false)
+                  } else {
+                    window.worshipsync.confidence.open(selectedConfidenceDisplayId)
+                    setConfidenceOpen(true)
+                  }
+                }}
+                className={`text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded transition-colors ${
+                  confidenceOpen
+                    ? "text-[hsl(var(--success))] hover:text-red-400"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                title={confidenceOpen ? "Close confidence monitor" : "Open confidence monitor"}
+              >
+                {confidenceOpen ? "ON" : "OFF"}
+              </button>
+            </div>
           </div>
         </div>
 

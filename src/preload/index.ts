@@ -135,6 +135,17 @@ contextBridge.exposeInMainWorld('worshipsync', {
     stop:      ()              => ipcRenderer.invoke('stageDisplay:stop'),
     getStatus: ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
   },
+  confidence: {
+    open:      (displayId?: number) => ipcRenderer.send('window:openConfidence', displayId),
+    move:      (displayId: number)  => ipcRenderer.send('window:moveConfidence', displayId),
+    close:     ()                   => ipcRenderer.send('window:closeConfidence'),
+    isOpen:    ()                   => ipcRenderer.invoke('window:getConfidenceOpen') as Promise<boolean>,
+    ready:     ()                   => ipcRenderer.send('confidence:ready'),
+    onClosed:  (cb: () => void) => {
+      ipcRenderer.on('window:confidenceClosed', cb)
+      return () => ipcRenderer.removeListener('window:confidenceClosed', cb)
+    },
+  },
 })
 
 interface SlidePayload {
