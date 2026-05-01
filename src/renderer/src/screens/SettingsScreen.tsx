@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react"
+import { QRCodeSVG } from "qrcode.react"
 import {
   Download, Upload, CheckCircle2, AlertCircle, Database, Clock,
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
@@ -204,6 +205,7 @@ export default function SettingsScreen() {
   const [stageCopied, setStageCopied]       = useState(false)
   const [stageMdnsCopied, setStageMdnsCopied] = useState(false)
   const [stageLoading, setStageLoading]     = useState(false)
+  const [showQR, setShowQR]                 = useState(false)
 
   const refreshStageStatus = useCallback(async () => {
     const s = await window.worshipsync.stageDisplay.getStatus()
@@ -629,6 +631,35 @@ export default function SettingsScreen() {
                           : <><Copy className="h-3.5 w-3.5" /> Copy</>}
                       </button>
                     </div>
+                  </div>
+
+                  {/* QR code */}
+                  <div>
+                    <button
+                      onClick={() => setShowQR(v => !v)}
+                      className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                    >
+                      {showQR ? "Hide QR Code" : "Show QR Code"}
+                    </button>
+                    {showQR && (
+                      <div className="mt-3 flex flex-col items-center gap-2">
+                        <div className="bg-white p-3 rounded-xl inline-block">
+                          <QRCodeSVG
+                            value={stageMdnsURL || stageURL}
+                            size={180}
+                            level="M"
+                          />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground text-center">
+                          Scan to open the stage display on any device on the same Wi-Fi
+                        </p>
+                        {stageMdnsURL && stageURL && (
+                          <p className="text-[10px] text-muted-foreground/60 text-center font-mono">
+                            fallback: {stageURL}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
