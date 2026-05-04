@@ -1113,7 +1113,7 @@ ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: strin
 ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
   const result = db.select({ count: count() })
     .from(songs)
-    .where(eq(songs.backgroundPath, imagePath))
+    .where(and(eq(songs.backgroundPath, imagePath), ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
     .get()
   return result?.count ?? 0
 })
@@ -1121,7 +1121,7 @@ ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
 ipcMain.handle('backgrounds:getUsingSongs', (_e, imagePath: string) => {
   return db.select({ id: songs.id, title: songs.title, artist: songs.artist })
     .from(songs)
-    .where(eq(songs.backgroundPath, imagePath))
+    .where(and(eq(songs.backgroundPath, imagePath), ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
     .all()
 })
 

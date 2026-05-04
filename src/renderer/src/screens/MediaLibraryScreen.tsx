@@ -84,11 +84,14 @@ export default function MediaLibraryScreen() {
   const loadFiles = useCallback(async (savedFileFolder?: Record<string, string | null>) => {
     const paths: string[] = await window.worshipsync.backgrounds.listImages()
     const items: MediaItem[] = await Promise.all(
-      paths.map(async (p) => ({
-        path: p,
-        filename: p.split("/").pop() ?? p,
-        usageCount: await window.worshipsync.backgrounds.getUsageCount(p),
-      }))
+      paths.map(async (p) => {
+        const usingSongs: { artist: string }[] = await window.worshipsync.backgrounds.getUsingSongs(p)
+        return {
+          path: p,
+          filename: p.split("/").pop() ?? p,
+          usageCount: usingSongs.filter(s => s.artist !== 'Scripture' && s.artist !== 'Media').length,
+        }
+      })
     )
     setFiles(items)
 
@@ -517,6 +520,9 @@ export default function MediaLibraryScreen() {
           onDelete={() => handleDelete([detailItem.path])}
           onMove={(folderId) => handleMoveFiles([detailItem.path], folderId)}
           onClose={() => setDetailItem(null)}
+          onUsageUpdate={(path, count) =>
+            setFiles(prev => prev.map(f => f.path === path ? { ...f, usageCount: count } : f))
+          }
         />
       )}
 
@@ -737,7 +743,7 @@ function MediaCard({
 // ── Detail Panel ──────────────────────────────────────────────────────────────
 
 function MediaDetailPanel({
-  item, folders, fileFolder, onDelete, onMove, onClose,
+  item, folders, fileFolder, onDelete, onMove, onClose, onUsageUpdate,
 }: {
   item: MediaItem
   folders: Folder[]
@@ -745,13 +751,20 @@ function MediaDetailPanel({
   onDelete: () => void
   onMove: (folderId: string | null) => void
   onClose: () => void
+  onUsageUpdate: (path: string, count: number) => void
 }) {
   const [usingSongs,    setUsingSongs]    = useState<{ id: number; title: string; artist: string }[]>([])
   const [usingServices, setUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
   const [showMoveMenu,  setShowMoveMenu]  = useState(false)
 
   useEffect(() => {
-    window.worshipsync.backgrounds.getUsingSongs(item.path).then(setUsingSongs).catch(() => setUsingSongs([]))
+    window.worshipsync.backgrounds.getUsingSongs(item.path)
+      .then(songs => {
+        const filtered = songs.filter((s: { artist: string }) => s.artist !== 'Scripture' && s.artist !== 'Media')
+        setUsingSongs(filtered)
+        onUsageUpdate(item.path, filtered.length)
+      })
+      .catch(() => setUsingSongs([]))
     window.worshipsync.backgrounds.getUsingServices(item.path).then(setUsingServices).catch(() => setUsingServices([]))
   }, [item.path])
 
