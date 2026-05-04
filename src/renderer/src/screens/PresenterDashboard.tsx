@@ -1772,8 +1772,8 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {/* Confidence monitor — only for lyric slides */}
-          {currentSong && currentSong.itemType !== "countdown" && currentSong.artist !== "Media" && <div className="mt-2">
+          {/* Confidence monitor — only for lyric slides, not scripture */}
+          {currentSong && currentSong.itemType !== "countdown" && currentSong.artist !== "Media" && currentSong.artist !== "Scripture" && <div className="mt-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
               Confidence Monitor
             </p>
