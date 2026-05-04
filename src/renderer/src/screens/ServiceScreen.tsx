@@ -1,4 +1,4 @@
-import { useCallback } from "react"
+import { useCallback, useState, useEffect } from "react"
 import BuilderScreen from "./BuilderScreen"
 import PresenterDashboard from "./PresenterDashboard"
 
@@ -13,25 +13,43 @@ interface Props {
 
 export default function ServiceScreen({
   serviceId,
+  initialMode,
   projectionOpen,
   onProjectionChange,
 }: Props) {
+  const [mode, setMode] = useState<ServiceMode>(initialMode)
+
+  // When projection opens, always switch to live view
+  useEffect(() => {
+    if (projectionOpen) setMode("live")
+  }, [projectionOpen])
+
+  // When projection closes (end show), go back to builder
+  useEffect(() => {
+    if (!projectionOpen) setMode("prepare")
+  }, [projectionOpen])
+
   const handleGoLive = useCallback(() => {
     window.worshipsync.window.openProjection()
     onProjectionChange(true)
+    setMode("live")
   }, [onProjectionChange])
 
-  const handleExitLive = useCallback(() => {
-    // PresenterDashboard.endShow() already calls closeProjection() and
-    // onProjectionChange(false) before this is invoked.
+  const handleSwitchToBuilder = useCallback(() => {
+    setMode("prepare")
   }, [])
 
-  if (projectionOpen) {
+  const handleReturnToPresenter = useCallback(() => {
+    setMode("live")
+  }, [])
+
+  if (mode === "live") {
     return (
       <PresenterDashboard
         projectionOpen={projectionOpen}
         onProjectionChange={onProjectionChange}
-        onExitLive={handleExitLive}
+        onExitLive={() => setMode("prepare")}
+        onSwitchToBuilder={handleSwitchToBuilder}
       />
     )
   }
@@ -40,6 +58,8 @@ export default function ServiceScreen({
     <BuilderScreen
       serviceId={serviceId}
       onGoLive={handleGoLive}
+      projectionOpen={projectionOpen}
+      onReturnToPresenter={projectionOpen ? handleReturnToPresenter : undefined}
     />
   )
 }

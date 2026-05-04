@@ -35,6 +35,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
 import LibraryModal from "../components/LibraryModal";
+import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
+import EditLyricsModal from "../components/EditLyricsModal";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,12 +156,14 @@ interface Props {
   projectionOpen: boolean;
   onProjectionChange: (open: boolean) => void;
   onExitLive: () => void;
+  onSwitchToBuilder?: () => void;
 }
 
 export default function PresenterDashboard({
   projectionOpen,
   onProjectionChange,
   onExitLive,
+  onSwitchToBuilder,
 }: Props) {
   const {
     selectedService,
@@ -182,6 +186,9 @@ export default function PresenterDashboard({
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [showBgPicker, setShowBgPicker] = useState(false);
+  const [showEditLyrics, setShowEditLyrics] = useState(false);
+  const [editLyricsInitial, setEditLyricsInitial] = useState("");
   const [displays, setDisplays] = useState<
     {
       id: number;
@@ -327,11 +334,7 @@ export default function PresenterDashboard({
         };
       }
 
-      const selectedIds: number[] = JSON.parse(item.selectedSections || "[]");
-      const filtered =
-        selectedIds.length > 0
-          ? item.song.sections.filter((s) => selectedIds.includes(s.id))
-          : item.song.sections;
+      const filtered = item.song.sections;
 
       // Resolve per-song maxLinesPerSlide from theme
       let maxLines = DEFAULT_THEME.maxLinesPerSlide;
@@ -673,6 +676,50 @@ export default function PresenterDashboard({
     await addSongToLineup(song.id);
   };
 
+  // ── Background picker ────────────────────────────────────────────────────
+  const handleBackgroundSelect = useCallback(async (bg: string | null) => {
+    const song = liveSongs[selectedSongIdx];
+    if (!song) return;
+    await window.worshipsync.backgrounds.setBackground(song.songId, bg);
+    // Reflect the change locally so the slide re-renders immediately
+    setLiveSongs(prev => prev.map((s, i) =>
+      i === selectedSongIdx ? { ...s, backgroundPath: bg } : s
+    ));
+    setShowBgPicker(false);
+  }, [liveSongs, selectedSongIdx]);
+
+  // ── Edit lyrics ──────────────────────────────────────────────────────────
+  const handleOpenEditLyrics = useCallback(async () => {
+    const song = liveSongs[selectedSongIdx];
+    if (!song) return;
+    const full = await window.worshipsync.songs.getById(song.songId);
+    if (!full) return;
+    const raw = full.sections.map((s: { label: string; lyrics: string }) => `[${s.label}]\n${s.lyrics}`).join("\n\n");
+    setEditLyricsInitial(raw);
+    setShowEditLyrics(true);
+  }, [liveSongs, selectedSongIdx]);
+
+  const handleSaveLyrics = useCallback(async (lyrics: string) => {
+    const song = liveSongs[selectedSongIdx];
+    if (!song) return;
+    const full = await window.worshipsync.songs.getById(song.songId);
+    if (!full) return;
+    // Parse sections from the edited text and upsert
+    const sections: { type: string; label: string; lyrics: string; orderIndex: number }[] = [];
+    const blocks = lyrics.split(/\n(?=\[)/);
+    blocks.forEach((block, i) => {
+      const match = block.match(/^\[([^\]]+)\]\n?([\s\S]*)$/);
+      if (!match) return;
+      const label = match[1].trim();
+      const sectionLyrics = match[2].trimEnd();
+      const existing = full.sections.find((s: { label: string; type: string }) => s.label === label);
+      sections.push({ type: existing?.type ?? "verse", label, lyrics: sectionLyrics, orderIndex: i });
+    });
+    await window.worshipsync.songs.upsertSections(song.songId, sections);
+    await loadLineup(selectedService!.id);
+    setShowEditLyrics(false);
+  }, [liveSongs, selectedSongIdx, selectedService, loadLineup]);
+
   // ── Countdown ───────────────────────────────────────────────────────────
   // Resolve the timezone for the current service: match day-of-week to a saved schedule,
   // fall back to the global serviceTimezone setting.
@@ -1012,6 +1059,16 @@ export default function PresenterDashboard({
               LIVE
             </span>
           </div>
+          {onSwitchToBuilder && (
+            <button
+              onClick={onSwitchToBuilder}
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors border-t border-border"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit in Builder
+            </button>
+          )}
         </div>
 
         {/* Lineup tab */}
@@ -1522,11 +1579,12 @@ export default function PresenterDashboard({
                   variant="outline"
                   size="sm"
                   className="gap-1.5 h-7 text-xs"
+                  onClick={() => setShowBgPicker(v => !v)}
                 >
                   <ImageIcon className="h-3 w-3" /> Background
                 </Button>
                 {currentSong.artist !== "Scripture" && (
-                  <Button size="sm" className="gap-1.5 h-7 text-xs">
+                  <Button size="sm" className="gap-1.5 h-7 text-xs" onClick={handleOpenEditLyrics}>
                     <Pencil className="h-3 w-3" /> Edit Lyrics
                   </Button>
                 )}
@@ -2096,6 +2154,34 @@ export default function PresenterDashboard({
           excludeIds={liveSongs
             .filter((s) => s.itemType === "song")
             .map((s) => s.songId)}
+        />
+      )}
+
+      {showBgPicker && liveSongs[selectedSongIdx] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBgPicker(false)}>
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-[420px] max-h-[80vh] overflow-y-auto p-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-semibold">Background</span>
+              <button onClick={() => setShowBgPicker(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <BackgroundPickerPanel
+              currentBackground={liveSongs[selectedSongIdx].backgroundPath}
+              previewLabel={liveSongs[selectedSongIdx].title}
+              onSelect={handleBackgroundSelect}
+            />
+          </div>
+        </div>
+      )}
+
+      {showEditLyrics && liveSongs[selectedSongIdx] && (
+        <EditLyricsModal
+          songTitle={liveSongs[selectedSongIdx].title}
+          artist={liveSongs[selectedSongIdx].artist}
+          initialLyrics={editLyricsInitial}
+          onClose={() => setShowEditLyrics(false)}
+          onSave={handleSaveLyrics}
         />
       )}
     </div>

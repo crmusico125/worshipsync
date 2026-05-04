@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Checkbox } from "@/components/ui/checkbox"
 import { useServiceStore } from "../store/useServiceStore"
 import { useSongStore } from "../store/useSongStore"
 import LibraryModal from "../components/LibraryModal"
@@ -70,14 +69,10 @@ const SECTION_BADGE_COLORS: Record<string, string> = {
 
 function buildSlides(
   sections: { id: number; type: string; label: string; lyrics: string }[],
-  selectedIds: number[],
   maxLines = 2,
 ): Slide[] {
   const slides: Slide[] = []
-  const filtered = selectedIds.length > 0
-    ? sections.filter(s => selectedIds.includes(s.id))
-    : sections
-  for (const sec of filtered) {
+  for (const sec of sections) {
     // Split into paragraphs on blank lines — each paragraph boundary forces a new slide
     const paragraphs: string[][] = []
     let current: string[] = []
@@ -122,12 +117,14 @@ function sectionsToLyrics(sections: { label: string; lyrics: string }[]): string
 interface Props {
   serviceId: number | null
   onGoLive: () => void
+  projectionOpen?: boolean
+  onReturnToPresenter?: () => void
 }
 
-export default function BuilderScreen({ serviceId, onGoLive }: Props) {
+export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onReturnToPresenter }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
-    removeSongFromLineup, toggleSection, loadServices, selectService,
+    removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
@@ -196,25 +193,6 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const currentItem = lineup[selectedSongIdx] ?? null
   const currentSong = currentItem?.song ?? null
   const currentItemIsMedia = currentSong?.artist === 'Media'
-  const selectedSectionIds: number[] = useMemo(
-    () => {
-      if (!currentItem) return []
-      try { return JSON.parse(currentItem.selectedSections || "[]") } catch { return [] }
-    },
-    [currentItem],
-  )
-  // [-1] is the sentinel for "all sections explicitly deselected"
-  const allSectionsDeselected = selectedSectionIds.length === 1 && selectedSectionIds[0] === -1
-  const sectionTotal = currentSong?.sections.length ?? 0
-  const sectionsAllSelected = !allSectionsDeselected && (
-    selectedSectionIds.length === 0 || selectedSectionIds.length === sectionTotal
-  )
-  const sectionsSomeSelected = !allSectionsDeselected && !sectionsAllSelected && selectedSectionIds.length > 0
-  const sectionsIncludedCount = allSectionsDeselected
-    ? 0
-    : selectedSectionIds.length === 0
-      ? sectionTotal
-      : selectedSectionIds.filter((id) => id !== -1).length
 
   const effectiveTheme: ThemeStyle = useMemo(() => {
     const t = (currentSong?.themeId ? themeCache[currentSong.themeId] : null) ?? defaultTheme
@@ -226,10 +204,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   }, [currentSong, themeCache, defaultTheme, themeOverrides])
 
   const slides = useMemo(
-    () => (currentSong && !allSectionsDeselected)
-      ? buildSlides(currentSong.sections, selectedSectionIds, effectiveTheme.maxLinesPerSlide)
-      : [],
-    [currentSong, selectedSectionIds, allSectionsDeselected, effectiveTheme.maxLinesPerSlide],
+    () => currentSong ? buildSlides(currentSong.sections, effectiveTheme.maxLinesPerSlide) : [],
+    [currentSong, effectiveTheme.maxLinesPerSlide],
   )
   const currentSlide = slides[previewSlideIdx] ?? null
 
@@ -350,40 +326,6 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     await updateStatus(selectedService.id, "ready")
   }
 
-  // Empty selectedSections = "all included by default". When user unchecks a
-  // section for the first time, materialize the selection by adding all other
-  // IDs so the backend state matches the user's intent.
-  const handleSectionToggle = async (sectionId: number, shouldBeIncluded: boolean) => {
-    if (!currentItem || !currentSong) return
-    // Sentinel active — checking one section clears it and selects only that section
-    if (allSectionsDeselected && shouldBeIncluded) {
-      await window.worshipsync.lineup.setSections(currentItem.id, [sectionId])
-      await loadLineup(selectedService!.id)
-      return
-    }
-    // First uncheck from default all-included state — materialize all others as included
-    if (selectedSectionIds.length === 0 && !shouldBeIncluded) {
-      for (const sec of currentSong.sections) {
-        if (sec.id !== sectionId) await toggleSection(currentItem.id, sec.id, true)
-      }
-    } else {
-      await toggleSection(currentItem.id, sectionId, shouldBeIncluded)
-    }
-  }
-
-  const handleSelectAll = async () => {
-    if (!currentItem || !currentSong) return
-    const allIds = currentSong.sections.map((s) => s.id)
-    await window.worshipsync.lineup.setSections(currentItem.id, allIds)
-    await loadLineup(selectedService!.id)
-  }
-
-  const handleDeselectAll = async () => {
-    if (!currentItem) return
-    await window.worshipsync.lineup.setSections(currentItem.id, [-1])
-    await loadLineup(selectedService!.id)
-  }
-
   // ── Empty state ──────────────────────────────────────────────────────────
   if (!selectedService) {
     return (
@@ -429,6 +371,20 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-md">
               View only · past service
             </span>
+          ) : projectionOpen && onReturnToPresenter ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-md bg-[hsl(var(--success)/0.14)] text-[hsl(var(--success))]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
+                Show is live
+              </span>
+              <Button
+                size="sm"
+                className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
+                onClick={onReturnToPresenter}
+              >
+                <Monitor className="h-3.5 w-3.5" /> Back to Presenter
+              </Button>
+            </>
           ) : (
             <>
               {selectedService.status !== "ready" && lineup.length > 0 && (
@@ -487,17 +443,11 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                     const isMedia = item.song?.artist === 'Media'
                     let slideCount = 0
                     if (!isCountdown && !isMedia && item.song) {
-                      const itemSelectedIds: number[] = (() => {
-                        try { return JSON.parse(item.selectedSections || "[]") } catch { return [] }
-                      })()
-                      const itemNone = itemSelectedIds.length === 1 && itemSelectedIds[0] === -1
-                      if (!itemNone) {
-                        let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
-                        if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
-                          try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
-                        }
-                        slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
+                      let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
+                      if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
+                        try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
                       }
+                      slideCount = buildSlides(item.song.sections, itemMaxLines).length
                     }
                     return (
                       <SortableLineupItem
@@ -627,73 +577,6 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                   </div>
                 ) : (
                   <>
-                    {/* Sections — what to include (hidden for media/audio/video) */}
-                    {currentSong.artist !== 'Media' && (
-                    <div className="px-6 py-4 border-b border-border">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Sections
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-muted-foreground">
-                            {sectionsIncludedCount} of {sectionTotal} included
-                          </span>
-                          <Checkbox
-                            checked={sectionsAllSelected ? true : sectionsSomeSelected ? "indeterminate" : false}
-                            disabled={isPast}
-                            onCheckedChange={() => {
-                              if (isPast) return
-                              if (sectionsAllSelected) handleDeselectAll()
-                              else handleSelectAll()
-                            }}
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {currentSong.sections.map(sec => {
-                          const included = allSectionsDeselected
-                            ? false
-                            : selectedSectionIds.length === 0
-                              ? true
-                              : selectedSectionIds.includes(sec.id)
-                          return (
-                            <label
-                              key={sec.id}
-                              className={`flex items-start gap-2.5 px-3 py-2 rounded-md border transition-colors ${
-                                isPast ? "cursor-default opacity-60" : "cursor-pointer"
-                              } ${
-                                included ? "border-primary/30 bg-primary/5" : "border-border hover:bg-accent/50"
-                              }`}
-                              onClick={(e) => {
-                                // prevent double-toggle from checkbox
-                                if ((e.target as HTMLElement).tagName === "BUTTON") return
-                              }}
-                            >
-                              <Checkbox
-                                checked={included}
-                                disabled={isPast}
-                                onCheckedChange={(checked) => {
-                                  if (!isPast) handleSectionToggle(sec.id, checked === true)
-                                }}
-                                className="mt-0.5"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-1.5 mb-0.5">
-                                  <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded text-white ${SECTION_BADGE_COLORS[sec.type] ?? "bg-slate-600"}`}>
-                                    {sec.label}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-muted-foreground truncate">
-                                  {sec.lyrics.split("\n")[0] || "(empty)"}
-                                </p>
-                              </div>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    )}
-
                     {/* Slide grid preview */}
                     <div className="px-6 py-4">
                       <div className="flex items-center justify-between mb-3">
@@ -706,7 +589,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                       </div>
                       {slides.length === 0 ? (
                         <p className="text-xs text-muted-foreground py-4 text-center">
-                          No slides — enable some sections above to generate slides.
+                          No slides — add lyrics to this song to generate slides.
                         </p>
                       ) : (
                         <div className="grid grid-cols-3 gap-2.5">

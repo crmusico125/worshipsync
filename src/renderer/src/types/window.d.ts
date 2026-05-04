@@ -148,13 +148,10 @@ declare global {
       stageDisplay: {
         start:     (port?: number) => Promise<{ ok: boolean; url: string; port: number }>
         stop:      ()              => Promise<boolean>
-        setLineup: (items: unknown[], currentIdx: number) => Promise<boolean>
         getStatus: ()              => Promise<{
           running: boolean
           url: string
           mdnsUrl: string
-          controllerUrl?: string
-          controllerMdnsUrl?: string
           port: number
           clients: number
           localIP: string
@@ -168,9 +165,6 @@ declare global {
         isOpen:   ()                   => Promise<boolean>
         ready:    ()                   => void
         onClosed: (cb: () => void)     => () => void
-      }
-      pwa: {
-        onControl: (cb: (action: { action: string }) => void) => () => void
       }
     }
   }

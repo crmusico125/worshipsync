@@ -131,10 +131,9 @@ contextBridge.exposeInMainWorld('worshipsync', {
     import: () => ipcRenderer.invoke('data:import'),
   },
   stageDisplay: {
-    start:      (port?: number)                    => ipcRenderer.invoke('stageDisplay:start', port),
-    stop:       ()                                 => ipcRenderer.invoke('stageDisplay:stop'),
-    getStatus:  ()                                 => ipcRenderer.invoke('stageDisplay:getStatus'),
-    setLineup:  (items: unknown[], currentIdx: number) => ipcRenderer.invoke('stageDisplay:setLineup', items, currentIdx),
+    start:     (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
+    stop:      ()              => ipcRenderer.invoke('stageDisplay:stop'),
+    getStatus: ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
   },
   confidence: {
     open:      (displayId?: number) => ipcRenderer.send('window:openConfidence', displayId),
@@ -145,12 +144,6 @@ contextBridge.exposeInMainWorld('worshipsync', {
     onClosed:  (cb: () => void) => {
       ipcRenderer.on('window:confidenceClosed', cb)
       return () => ipcRenderer.removeListener('window:confidenceClosed', cb)
-    },
-  },
-  pwa: {
-    onControl: (cb: (action: { action: string }) => void) => {
-      ipcRenderer.on('pwa:control', (_e, action) => cb(action))
-      return () => ipcRenderer.removeAllListeners('pwa:control')
     },
   },
 })

@@ -3,9 +3,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
-import type { Server, IncomingMessage } from 'http'
+import type { Server } from 'http'
 import type { Socket } from 'net'
-import { createHash } from 'crypto'
 import { networkInterfaces, hostname } from 'os'
 import { execSync } from 'child_process'
 import { Bonjour } from 'bonjour-service'
@@ -27,66 +26,11 @@ let movingProjection = false  // true while doing an intentional display switch
 
 interface StageClient {
   socket: Socket
-  /** Encodes and writes one event to this client. Returns false if the socket is dead. */
   send: (event: unknown) => boolean
-  /** Sends a protocol-level keepalive (WS ping frame or SSE comment). */
   ping: () => boolean
   ip: string
   userAgent: string
   connectedAt: number
-}
-
-// ── WebSocket helpers (RFC 6455, no external deps) ────────────────────────────
-const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-const WS_PING_FRAME = Buffer.from([0x89, 0x00])           // opcode=9, no payload
-const WS_PONG_OPCODE = 0x8A
-
-function wsAccept(key: string): string {
-  return createHash('sha1').update(key + WS_GUID).digest('base64')
-}
-
-function wsEncode(text: string): Buffer {
-  const payload = Buffer.from(text, 'utf8')
-  const len = payload.length
-  let header: Buffer
-  if (len <= 125) {
-    header = Buffer.from([0x81, len])
-  } else if (len <= 0xFFFF) {
-    header = Buffer.allocUnsafe(4)
-    header[0] = 0x81; header[1] = 126
-    header.writeUInt16BE(len, 2)
-  } else {
-    header = Buffer.allocUnsafe(10)
-    header[0] = 0x81; header[1] = 127
-    header.writeUInt32BE(0, 2); header.writeUInt32BE(len, 6)
-  }
-  return Buffer.concat([header, payload])
-}
-
-/** Parse one WebSocket frame from buf. Returns null if incomplete. */
-function wsDecode(buf: Buffer): { opcode: number; payload: Buffer; consumed: number } | null {
-  if (buf.length < 2) return null
-  const masked = (buf[1] & 0x80) !== 0
-  let payloadLen = buf[1] & 0x7F
-  let offset = 2
-  if (payloadLen === 126) {
-    if (buf.length < 4) return null
-    payloadLen = buf.readUInt16BE(2); offset = 4
-  } else if (payloadLen === 127) {
-    if (buf.length < 10) return null
-    // We only read the low 32 bits (payloads > 4 GB not expected)
-    payloadLen = buf.readUInt32BE(6); offset = 10
-  }
-  const frameLen = offset + (masked ? 4 : 0) + payloadLen
-  if (buf.length < frameLen) return null
-  const opcode = buf[0] & 0x0F
-  const dataStart = offset + (masked ? 4 : 0)
-  const data = Buffer.from(buf.slice(dataStart, dataStart + payloadLen))
-  if (masked) {
-    const mask = buf.slice(offset, offset + 4)
-    for (let i = 0; i < data.length; i++) data[i] ^= mask[i & 3]
-  }
-  return { opcode, payload: data, consumed: frameLen }
 }
 
 function parseDeviceLabel(ua: string): string {
@@ -102,15 +46,12 @@ function parseDeviceLabel(ua: string): string {
 }
 
 let stageServer: Server | null = null
-let stageClients: StageClient[] = []
+let sseClients: StageClient[] = []
 let stageSlide: unknown = null
 let stageBlank = false
 let stageCountdown: unknown = null
-let stageLineup: unknown[] = []
-let stageCurrentLineupIdx = -1
 let stagePort = 4040
 let stagePingInterval: ReturnType<typeof setInterval> | null = null
-let stagePendingSlide = false   // true when slide:show IPC is in flight; suppresses blank broadcast
 const bonjour = new Bonjour()
 let bonjourService: ReturnType<typeof bonjour.publish> | null = null
 
@@ -133,26 +74,10 @@ function getLocalIP(): string {
 }
 
 
-// Write an SSE message directly to the TCP socket using HTTP/1.1 chunked encoding.
-// This bypasses Node's HttpOutgoingMessage stream which corks the socket internally,
-// causing buffering even when setNoDelay is set.
-function sseWrite(socket: Socket, data: string): boolean {
-  try {
-    const buf = Buffer.from(data, 'utf8')
-    // chunked-encoding frame: <hex-len>\r\n<data>\r\n
-    socket.write(Buffer.concat([
-      Buffer.from(`${buf.length.toString(16)}\r\n`),
-      buf,
-      Buffer.from('\r\n'),
-    ]))
-    return !socket.destroyed
-  } catch {
-    return false
-  }
-}
 
-function broadcastStage(event: unknown) {
-  stageClients = stageClients.filter(c => c.send(event))
+function broadcastAll(event: unknown) {
+  const stamped = Object.assign({}, event as object, { sentAt: Date.now() })
+  sseClients = sseClients.filter(c => c.send(stamped))
 }
 
 function formatDuration(ms: number): string {
@@ -163,415 +88,6 @@ function formatDuration(ms: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-const CONTROLLER_MANIFEST = JSON.stringify({
-  name: 'WorshipSync Controller',
-  short_name: 'WS Remote',
-  start_url: '/controller',
-  display: 'standalone',
-  background_color: '#0c0c14',
-  theme_color: '#0c0c14',
-  orientation: 'portrait-primary',
-})
-
-const CONTROLLER_HTML = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0c0c14">
-<title>WorshipSync Controller</title>
-<link rel="manifest" href="/manifest.json">
-<style>
-*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{background:#0c0c14;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;height:100dvh;display:flex;flex-direction:column;overflow:hidden;user-select:none;padding-top:env(safe-area-inset-top)}
-
-#top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);min-height:52px;flex-shrink:0}
-#song-title{font-size:13px;font-weight:600;color:#c4c4cc;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#song-artist{font-size:11px;color:rgba(255,255,255,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px}
-#live-badge{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.08em;color:#22c55e;flex-shrink:0}
-#live-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
-#live-dot.off{background:#ef4444;animation:none}
-
-#status-strip{display:flex;align-items:center;gap:8px;padding:7px 16px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);flex-shrink:0}
-#section-badge{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:rgba(139,92,246,.18);color:#a78bfa;border:1px solid rgba(139,92,246,.3);border-radius:5px;padding:3px 8px;display:none}
-#slide-pos{font-size:11px;color:rgba(255,255,255,.35);font-variant-numeric:tabular-nums;margin-left:auto}
-
-#pages{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
-
-/* ── Controller tab ── */
-#page-controller{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
-#main-area{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
-#current-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 20px 12px;min-height:0;overflow:hidden}
-#section-label{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(139,92,246,.8);margin-bottom:10px;text-align:center}
-#lyrics{font-size:clamp(22px,6vw,32px);font-weight:700;line-height:1.4;text-align:center;color:#fff;letter-spacing:-.01em;max-width:100%;display:none}
-#lyrics div{padding-bottom:.08em}
-#empty{text-align:center;color:rgba(255,255,255,.2)}
-#empty p{font-size:13px;line-height:1.5}
-#blank-ind{display:none;flex-direction:column;align-items:center;gap:8px}
-#blank-dot{width:8px;height:8px;border-radius:50%;background:#ef4444}
-#blank-lbl{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.3)}
-
-#next-wrap{flex-shrink:0;border-top:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);padding:10px 20px 12px;display:none}
-#next-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-#next-label{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.25)}
-#next-sec{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(139,92,246,.6)}
-#next-lyrics{font-size:13px;font-weight:500;line-height:1.4;text-align:center;color:rgba(255,255,255,.35);overflow:hidden;max-height:52px}
-#next-lyrics div{padding-bottom:.04em}
-
-#controls{flex-shrink:0;padding:12px 16px;display:flex;flex-direction:column;gap:10px;border-top:1px solid rgba(255,255,255,.08)}
-#nav-row{display:grid;grid-template-columns:1fr 1.6fr 1fr;gap:8px}
-.nav-btn{border:none;border-radius:12px;font-weight:700;cursor:pointer;transition:transform .08s}
-.nav-btn:active{transform:scale(.94)}
-#btn-prev{background:rgba(255,255,255,.08);color:#fff;padding:14px 0;font-size:20px}
-#btn-next{background:#22c55e;color:#fff;padding:14px 0;font-size:24px}
-#btn-nextsec{background:rgba(255,255,255,.08);color:#fff;padding:14px 0;font-size:15px;letter-spacing:-.02em}
-#quick-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.quick-btn{border:none;border-radius:10px;padding:11px 6px;font-size:11px;font-weight:600;cursor:pointer;transition:transform .08s;letter-spacing:.01em}
-.quick-btn:active{transform:scale(.94)}
-#btn-clear{background:rgba(255,255,255,.07);color:rgba(255,255,255,.75)}
-#btn-blank{background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.3)}
-#btn-blank.active{background:rgba(239,68,68,.35);color:#fca5a5}
-#btn-logo{background:rgba(255,255,255,.07);color:rgba(255,255,255,.75)}
-
-/* ── Song tab ── */
-#page-song{display:none;flex:1;flex-direction:column;min-height:0}
-#song-hdr{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0}
-#song-hdr-title{font-size:13px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#song-hdr-artist{font-size:11px;color:rgba(255,255,255,.4)}
-#song-scroll{flex:1;overflow-y:auto;padding:8px 10px}
-.s-card{padding:10px 12px;border-radius:8px;margin-bottom:6px;background:rgba(255,255,255,.04);border:1px solid transparent;cursor:default}
-.s-card.cur{background:rgba(139,92,246,.12);border-color:rgba(139,92,246,.35)}
-.s-card-sec{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(139,92,246,.7);margin-bottom:4px}
-.s-card-lines{font-size:13px;line-height:1.45;color:rgba(255,255,255,.8)}
-.s-card-lines div{padding-bottom:1px}
-#song-hint{padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px;line-height:1.5}
-
-/* ── Setlist tab ── */
-#page-setlist{display:none;flex:1;flex-direction:column;min-height:0}
-#setlist-hdr{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.4)}
-#setlist-scroll{flex:1;overflow-y:auto}
-.sl-item{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.04)}
-.sl-item.cur{background:rgba(139,92,246,.09)}
-.sl-num{font-size:11px;font-variant-numeric:tabular-nums;color:rgba(255,255,255,.25);width:18px;text-align:right;flex-shrink:0}
-.sl-info{flex:1;min-width:0}
-.sl-title{font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sl-artist{font-size:11px;color:rgba(255,255,255,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sl-cnt{font-size:10px;color:rgba(255,255,255,.2);flex-shrink:0;white-space:nowrap}
-.sl-arrow{font-size:11px;color:rgba(139,92,246,.7);flex-shrink:0;visibility:hidden}
-.sl-item.cur .sl-arrow{visibility:visible}
-#setlist-hint{padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px}
-
-/* ── Devices tab ── */
-#page-devices{display:none;flex:1;flex-direction:column;min-height:0}
-#dev-hdr{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.4)}
-#dev-scroll{flex:1;overflow-y:auto;padding:8px 10px}
-.dev-card{background:rgba(255,255,255,.04);border-radius:8px;padding:12px 14px;margin-bottom:6px;display:flex;align-items:center;gap:12px}
-.dev-icon{font-size:24px;flex-shrink:0;line-height:1}
-.dev-info{flex:1;min-width:0}
-.dev-name{font-size:13px;font-weight:600;color:#fff}
-.dev-ip{font-size:11px;color:rgba(255,255,255,.35)}
-.dev-time{font-size:10px;color:rgba(255,255,255,.2);margin-top:2px}
-#dev-hint{padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px}
-#dev-refresh{display:block;margin:0 auto 16px;padding:9px 24px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:rgba(255,255,255,.6);font-size:12px;cursor:pointer}
-#dev-refresh:active{transform:scale(.96)}
-
-/* ── Bottom nav ── */
-#bottom-nav{flex-shrink:0;display:flex;border-top:1px solid rgba(255,255,255,.08);background:#0c0c14;padding-bottom:env(safe-area-inset-bottom)}
-.bnav{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 4px;font-size:9px;font-weight:600;letter-spacing:.04em;color:rgba(255,255,255,.25);border:none;background:none;cursor:pointer}
-.bnav.on{color:#22c55e}
-.bnav-ic{font-size:17px;line-height:1}
-
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-</style>
-</head>
-<body>
-
-<div id="top">
-  <div id="song-title">WorshipSync</div>
-  <div id="song-artist"></div>
-  <div id="live-badge"><div id="live-dot" class="off"></div>LIVE</div>
-</div>
-<div id="status-strip">
-  <div id="section-badge"></div>
-  <div id="slide-pos"></div>
-</div>
-
-<div id="pages">
-
-  <!-- Controller -->
-  <div id="page-controller">
-    <div id="main-area">
-      <div id="current-wrap">
-        <div id="section-label"></div>
-        <div id="lyrics"></div>
-        <div id="empty"><p>Waiting for slides\u2026</p></div>
-        <div id="blank-ind"><div id="blank-dot"></div><div id="blank-lbl">Screen Blank</div></div>
-      </div>
-      <div id="next-wrap">
-        <div id="next-header"><span id="next-label">NEXT</span><span id="next-sec"></span></div>
-        <div id="next-lyrics"></div>
-      </div>
-    </div>
-    <div id="controls">
-      <div id="nav-row">
-        <button class="nav-btn" id="btn-prev" onclick="cmd('prev')">&#x23EE;</button>
-        <button class="nav-btn" id="btn-next" onclick="cmd('next')">&#x25B6;</button>
-        <button class="nav-btn" id="btn-nextsec" onclick="cmd('nextSection')">&gt;&gt;|</button>
-      </div>
-      <div id="quick-row">
-        <button class="quick-btn" id="btn-clear" onclick="cmd('clearText')">Clear Text</button>
-        <button class="quick-btn" id="btn-blank" onclick="cmd('blank')">To Black</button>
-        <button class="quick-btn" id="btn-logo" onclick="cmd('logo')">Logo</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Song -->
-  <div id="page-song">
-    <div id="song-hdr">
-      <div id="song-hdr-title">Current Song</div>
-      <div id="song-hdr-artist"></div>
-    </div>
-    <div id="song-scroll"><div id="song-hint">Advance slides to see them here.</div></div>
-  </div>
-
-  <!-- Setlist -->
-  <div id="page-setlist">
-    <div id="setlist-hdr">Setlist</div>
-    <div id="setlist-scroll"><div id="setlist-hint">No setlist data yet.</div></div>
-  </div>
-
-  <!-- Devices -->
-  <div id="page-devices">
-    <div id="dev-hdr">Connected Devices</div>
-    <div id="dev-scroll"><div id="dev-hint">Loading\u2026</div></div>
-    <button id="dev-refresh" onclick="loadDevices()">Refresh</button>
-  </div>
-
-</div>
-
-<div id="bottom-nav">
-  <button class="bnav on"  id="bn-controller" onclick="tab('controller')"><div class="bnav-ic">&#x1F39B;</div>Controller</button>
-  <button class="bnav"     id="bn-song"       onclick="tab('song')"><div class="bnav-ic">&#x1F3B5;</div>Song</button>
-  <button class="bnav"     id="bn-setlist"    onclick="tab('setlist')"><div class="bnav-ic">&#x1F4CB;</div>Setlist</button>
-  <button class="bnav"     id="bn-devices"    onclick="tab('devices')"><div class="bnav-ic">&#x1F4F1;</div>Devices</button>
-</div>
-
-<script>
-var blanked=false,reconnTimer=null,cdTimer=null,activeTab='controller';
-var curSongTitle='',curSongArtist='',curSlideIdx=-1,curTotalSlides=0;
-var songSlides={};
-var lineup=[],lineupIdx=-1;
-
-function $(id){return document.getElementById(id)}
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function pad(n){return String(n).padStart(2,'0')}
-
-function cmd(action){
-  if(ws&&ws.readyState===1){ws.send(JSON.stringify({action:action}))}
-  else{fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})}).catch(function(){})}
-}
-
-/* ── Tab switching ── */
-var TABS=['controller','song','setlist','devices'];
-function tab(t){
-  activeTab=t;
-  for(var i=0;i<TABS.length;i++){
-    var pg=$('page-'+TABS[i]),bn=$('bn-'+TABS[i]);
-    pg.style.display=TABS[i]===t?'flex':'none';
-    bn.classList.toggle('on',TABS[i]===t);
-  }
-  if(t==='song') renderSong();
-  if(t==='setlist') renderSetlist();
-  if(t==='devices') loadDevices();
-}
-
-/* ── WebSocket ── */
-var ws=null;
-function connect(){
-  ws=new WebSocket('ws://'+location.host+'/ws');
-  ws.onopen=function(){$('live-dot').classList.remove('off');clearTimeout(reconnTimer)};
-  ws.onmessage=function(e){handle(JSON.parse(e.data))};
-  ws.onclose=function(){$('live-dot').classList.add('off');reconnTimer=setTimeout(connect,3000)};
-}
-
-function handle(ev){
-  if(ev.type==='init'){
-    if(ev.slide)showSlide(ev.slide);
-    setBlank(!!ev.blank);
-    if(ev.countdown)doCountdown(ev.countdown);
-    if(ev.lineup)applyLineup(ev.lineup,ev.currentLineupIdx!=null?ev.currentLineupIdx:-1);
-  } else if(ev.type==='slide'){
-    clearCD();showSlide(ev.payload);setBlank(false);
-  } else if(ev.type==='blank'){
-    setBlank(ev.isBlank);
-  } else if(ev.type==='countdown'){
-    doCountdown(ev.data);
-  } else if(ev.type==='lineup'){
-    applyLineup(ev.items,ev.currentIdx!=null?ev.currentIdx:-1);
-  } else if(ev.type==='shutdown'){
-    $('live-dot').classList.add('off');
-    clearTimeout(reconnTimer);if(ws){ws.onclose=null;ws.close();}
-    $('song-title').textContent='Stage display stopped';
-    $('lyrics').style.display='none';
-    $('empty').style.display='block';
-    $('next-wrap').style.display='none';
-  }
-}
-
-/* ── Slide display ── */
-function showSlide(p){
-  var lines=p.lines||[],title=p.songTitle||'',artist=p.artist||'';
-  if(title!==curSongTitle){
-    curSongTitle=title;curSongArtist=artist;
-    songSlides={};
-    $('song-hdr-title').textContent=title||'Current Song';
-    $('song-hdr-artist').textContent=artist;
-  }
-  curSlideIdx=p.slideIndex||0;
-  curTotalSlides=p.totalSlides||0;
-  if(p.sectionLabel!=null) songSlides[curSlideIdx]={sec:p.sectionLabel,lines:lines};
-  if(activeTab==='song') renderSong();
-
-  $('song-title').textContent=title;
-  $('song-artist').textContent=artist;
-  var sec=p.sectionLabel||'';
-  $('section-badge').textContent=sec;
-  $('section-badge').style.display=sec?'inline-block':'none';
-  $('section-label').textContent=sec;
-  $('slide-pos').textContent=(p.slideIndex!=null&&p.totalSlides!=null)?(p.slideIndex+1)+' / '+p.totalSlides:'';
-
-  $('blank-ind').style.display='none';
-  $('empty').style.display='none';
-  if(lines.length&&lines.some(function(l){return l&&l.trim()})){
-    $('lyrics').style.display='block';
-    $('lyrics').innerHTML=lines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
-  } else {
-    $('lyrics').style.display='none';
-    $('empty').style.display='block';
-  }
-
-  var nl=p.nextLines||[];
-  if(nl.length){
-    $('next-wrap').style.display='block';
-    $('next-sec').textContent=p.nextSectionLabel||'';
-    $('next-lyrics').innerHTML=nl.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
-  } else {
-    $('next-wrap').style.display='none';
-  }
-}
-
-function setBlank(b){
-  blanked=!!b;
-  $('btn-blank').textContent=b?'Unblank':'To Black';
-  $('btn-blank').classList.toggle('active',!!b);
-  if(b){
-    $('lyrics').style.display='none';
-    $('empty').style.display='none';
-    $('next-wrap').style.display='none';
-    $('blank-ind').style.display='flex';
-  } else {
-    $('blank-ind').style.display='none';
-  }
-}
-
-/* ── Song tab ── */
-function renderSong(){
-  var scroll=$('song-scroll');
-  var keys=Object.keys(songSlides).map(Number).sort(function(a,b){return a-b});
-  if(!keys.length){
-    scroll.innerHTML='<div id="song-hint" style="padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px;line-height:1.5">Advance slides to see them here.</div>';
-    return;
-  }
-  var html='';
-  for(var i=0;i<keys.length;i++){
-    var idx=keys[i],s=songSlides[idx],active=idx===curSlideIdx;
-    html+='<div class="s-card'+(active?' cur':'')+'"><div class="s-card-sec">'+esc(s.sec||'')+'</div><div class="s-card-lines">';
-    var ls=s.lines||[];
-    for(var j=0;j<ls.length;j++) html+='<div>'+(ls[j]?esc(ls[j]):'&nbsp;')+'</div>';
-    html+='</div></div>';
-  }
-  scroll.innerHTML=html;
-  var el=scroll.querySelector('.s-card.cur');
-  if(el) el.scrollIntoView({block:'nearest',behavior:'smooth'});
-}
-
-/* ── Setlist tab ── */
-function applyLineup(items,idx){
-  lineup=items||[];lineupIdx=idx;
-  if(activeTab==='setlist') renderSetlist();
-}
-
-function renderSetlist(){
-  var scroll=$('setlist-scroll');
-  if(!lineup.length){
-    scroll.innerHTML='<div id="setlist-hint" style="padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px">No setlist data yet.</div>';
-    return;
-  }
-  var html='';
-  for(var i=0;i<lineup.length;i++){
-    var it=lineup[i],active=i===lineupIdx;
-    html+='<div class="sl-item'+(active?' cur':'')+'"><div class="sl-num">'+(i+1)+'</div>';
-    html+='<div class="sl-info"><div class="sl-title">'+esc(it.title||'')+'</div><div class="sl-artist">'+esc(it.artist||'')+'</div></div>';
-    if(it.slideCount) html+='<div class="sl-cnt">'+it.slideCount+' slides</div>';
-    html+='<div class="sl-arrow">&#x25B6;</div></div>';
-  }
-  scroll.innerHTML=html;
-  var el=scroll.querySelector('.sl-item.cur');
-  if(el) el.scrollIntoView({block:'nearest',behavior:'smooth'});
-}
-
-/* ── Devices tab ── */
-function loadDevices(){
-  $('dev-scroll').innerHTML='<div id="dev-hint" style="padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px">Loading\u2026</div>';
-  fetch('/status').then(function(r){return r.json()}).then(function(d){
-    var clients=d.clients||[];
-    if(!clients.length){
-      $('dev-scroll').innerHTML='<div style="padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px">No other devices connected.</div>';
-      return;
-    }
-    var html='';
-    for(var i=0;i<clients.length;i++){
-      var c=clients[i];
-      var ua=c.device||'';
-      var icon=(/iphone|ipad/i.test(ua))?'\uD83D\uDCF1':(/android/i.test(ua))?'\uD83D\uDCF1':'\uD83D\uDDA5\uFE0F';
-      html+='<div class="dev-card"><div class="dev-icon">'+icon+'</div>';
-      html+='<div class="dev-info"><div class="dev-name">'+esc(c.device)+'</div>';
-      html+='<div class="dev-ip">'+esc(c.ip)+'</div>';
-      html+='<div class="dev-time">Connected '+esc(c.connectedFor)+'</div></div></div>';
-    }
-    $('dev-scroll').innerHTML=html;
-  }).catch(function(){
-    $('dev-scroll').innerHTML='<div style="padding:32px 16px;text-align:center;color:rgba(255,255,255,.2);font-size:13px">Could not load device list.</div>';
-  });
-}
-
-/* ── Countdown ── */
-function doCountdown(d){
-  clearCD();
-  $('song-title').textContent='Service Starting';
-  if(!d.running)return;
-  var target=new Date(d.targetTime).getTime();
-  function tick(){
-    var diff=target-Date.now();
-    if(diff<=0){$('lyrics').innerHTML='<div>Starting!</div>';$('lyrics').style.display='block';return}
-    var m=Math.floor(diff/60000),s=Math.floor((diff%60000)/1000);
-    $('lyrics').innerHTML='<div>'+pad(m)+':'+pad(s)+'</div>';
-    $('lyrics').style.display='block';
-    $('empty').style.display='none';
-    cdTimer=setTimeout(tick,500);
-  }
-  tick();
-}
-function clearCD(){clearTimeout(cdTimer);cdTimer=null}
-
-connect();
-</script>
-</body>
-</html>`
-
 function startStageServer(port = 4040): Promise<boolean> {
   return new Promise((resolve) => {
     if (stageServer) { resolve(true); return }
@@ -580,6 +96,7 @@ function startStageServer(port = 4040): Promise<boolean> {
       if (req.url === '/events') {
         const sock = req.socket
         sock.setNoDelay(true)
+        sock.setKeepAlive(true, 1000)
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -587,102 +104,39 @@ function startStageServer(port = 4040): Promise<boolean> {
           'X-Accel-Buffering': 'no',
           'Access-Control-Allow-Origin': '*',
         })
-        res.flushHeaders()
-        // From here on, write directly to the socket to avoid HttpOutgoingMessage buffering
+        // Use res.write() — the standard SSE path. res.write() owns the chunked
+        // encoding, cork/uncork, and flush lifecycle correctly. Writing directly to
+        // the socket while res is still open interferes with that and adds latency.
+        const sseSend = (data: string): boolean => {
+          if (!res.writable) return false
+          try { res.write(data); return true } catch { return false }
+        }
         const client: StageClient = {
           socket: sock,
-          send: (event: unknown) => sseWrite(sock, `data: ${JSON.stringify(event)}\n\n`),
-          ping: () => sseWrite(sock, `: ping\n\n`),
+          send: (event: unknown) => sseSend(`data: ${JSON.stringify(event)}\n\n`),
+          ping: () => sseSend(': ping\n\n'),
           ip: (sock.remoteAddress ?? '').replace('::ffff:', ''),
           userAgent: req.headers['user-agent'] ?? '',
           connectedAt: Date.now(),
         }
-        stageClients.push(client)
-        client.send({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown, lineup: stageLineup, currentLineupIdx: stageCurrentLineupIdx })
-        sock.on('close', () => { stageClients = stageClients.filter(c => c !== client) })
-      } else if (req.method === 'POST' && req.url === '/control') {
-        let body = ''
-        req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-        req.on('end', () => {
-          try {
-            const parsed = JSON.parse(body)
-            controlWindow?.webContents.send('pwa:control', parsed)
-          } catch { /* ignore malformed */ }
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end('{"ok":true}')
-        })
+        sseClients.push(client)
+        // Stage display only needs slide/blank/countdown — no lineup
+        client.send({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown })
+        req.on('close', () => { sseClients = sseClients.filter(c => c !== client) })
+        sock.on('error', () => { sseClients = sseClients.filter(c => c !== client) })
       } else if (req.url === '/status') {
-        const clientData = stageClients.map(c => ({
+        const clientData = sseClients.map(c => ({
           ip: c.ip,
           device: parseDeviceLabel(c.userAgent),
           connectedFor: formatDuration(Date.now() - c.connectedAt),
         }))
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
-        res.end(JSON.stringify({ clients: clientData, lineup: stageLineup, currentLineupIdx: stageCurrentLineupIdx }))
-      } else if (req.url === '/manifest.json') {
-        res.writeHead(200, { 'Content-Type': 'application/manifest+json' })
-        res.end(CONTROLLER_MANIFEST)
-      } else if (req.url === '/controller') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(CONTROLLER_HTML)
+        res.end(JSON.stringify({ clients: clientData }))
       } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(STAGE_DISPLAY_HTML)
       }
     })
-    // ── WebSocket upgrade — /ws endpoint ─────────────────────────────────────
-    server.on('upgrade', (req: IncomingMessage, socket: Socket) => {
-      const wsKey = req.headers['sec-websocket-key'] as string
-      if (!wsKey || req.url !== '/ws') { socket.destroy(); return }
-
-      socket.write(
-        'HTTP/1.1 101 Switching Protocols\r\n' +
-        'Upgrade: websocket\r\n' +
-        'Connection: Upgrade\r\n' +
-        `Sec-WebSocket-Accept: ${wsAccept(wsKey)}\r\n` +
-        '\r\n'
-      )
-      socket.setNoDelay(true)
-
-      let frameBuf = Buffer.alloc(0)
-      const client: StageClient = {
-        socket,
-        send: (event: unknown) => {
-          if (socket.destroyed) return false
-          try { socket.write(wsEncode(JSON.stringify(event))); return true } catch { return false }
-        },
-        ping: () => {
-          if (socket.destroyed) return false
-          try { socket.write(WS_PING_FRAME); return true } catch { return false }
-        },
-        ip: (socket.remoteAddress ?? '').replace('::ffff:', ''),
-        userAgent: req.headers['user-agent'] ?? '',
-        connectedAt: Date.now(),
-      }
-      stageClients.push(client)
-      client.send({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown, lineup: stageLineup, currentLineupIdx: stageCurrentLineupIdx })
-
-      socket.on('data', (chunk: Buffer) => {
-        frameBuf = Buffer.concat([frameBuf, chunk])
-        while (frameBuf.length > 0) {
-          const frame = wsDecode(frameBuf)
-          if (!frame) break
-          frameBuf = frameBuf.slice(frame.consumed)
-          if (frame.opcode === 0x08) { socket.destroy(); break }          // close
-          if (frame.opcode === 0x09) { socket.write(Buffer.from([0x8A, 0x00])); continue } // ping→pong
-          if (frame.opcode === WS_PONG_OPCODE) continue                   // ignore pong
-          if (frame.opcode === 0x01) {                                     // text — controller cmd
-            try {
-              const parsed = JSON.parse(frame.payload.toString('utf8'))
-              controlWindow?.webContents.send('pwa:control', parsed)
-            } catch { /* ignore */ }
-          }
-        }
-      })
-      socket.on('close', () => { stageClients = stageClients.filter(c => c !== client) })
-      socket.on('error', () => { stageClients = stageClients.filter(c => c !== client) })
-    })
-
     server.once('error', (err) => {
       console.error('[stage] failed to start:', err)
       stageServer = null
@@ -691,17 +145,14 @@ function startStageServer(port = 4040): Promise<boolean> {
     server.listen(port, () => {
       stageServer = server
       console.log(`[stage] listening on http://localhost:${port}`)
-      // Advertise via mDNS so devices can reach http://worshipsync.local:<port>
       try {
         bonjourService = bonjour.publish({ name: 'WorshipSync', type: 'http', port })
       } catch (e) {
         console.warn('[stage] mDNS publish failed:', e)
       }
-      // Keepalive ping every second — prevents WiFi radios from power-saving the
-      // connection and keeps the TCP receive window open so events arrive instantly.
       stagePingInterval = setInterval(() => {
-        stageClients = stageClients.filter(c => c.ping())
-      }, 1000)
+        sseClients = sseClients.filter(c => c.ping())
+      }, 250)
       resolve(true)
     })
   })
@@ -709,12 +160,11 @@ function startStageServer(port = 4040): Promise<boolean> {
 
 function stopStageServer() {
   if (stagePingInterval) { clearInterval(stagePingInterval); stagePingInterval = null }
-  // Tell clients to disconnect cleanly before closing — prevents auto-reconnect loop
-  stageClients.forEach(c => {
+  sseClients.forEach(c => {
     try { c.send({ type: 'shutdown' }) } catch { /* ignore */ }
     try { c.socket.destroy() } catch { /* ignore */ }
   })
-  stageClients = []
+  sseClients = []
   stageServer?.close()
   stageServer = null
   if (bonjourService) {
@@ -761,11 +211,12 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 /* ── Bottom bar ── */
 #bottom{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-top:1px solid rgba(255,255,255,.06);min-height:38px;flex-shrink:0}
 #slide-pos{font-size:11px;color:rgba(255,255,255,.25);font-variant-numeric:tabular-nums}
+#lag{font-size:10px;color:rgba(255,255,255,.18);font-variant-numeric:tabular-nums}
 #dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 #dot.off{background:#ef4444;animation:none}
 
 /* ── Blank overlay ── */
-#blank-overlay{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s ease;z-index:20;display:flex;align-items:center;justify-content:center}
+#blank-overlay{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:20;display:flex;align-items:center;justify-content:center}
 #blank-overlay.on{opacity:1}
 #blank-text{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.1)}
 
@@ -799,6 +250,7 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 
 <div id="bottom">
   <div id="slide-pos"></div>
+  <div id="lag"></div>
   <div id="dot" class="off"></div>
 </div>
 
@@ -819,23 +271,30 @@ function tickClock(){
 tickClock();
 setInterval(tickClock,5000);
 
-// ── WebSocket ──
-var ws=null;
+// ── SSE ──
+var es=null;
 function connect(){
-  ws=new WebSocket('ws://'+location.host+'/ws');
-  ws.onopen=function(){$('dot').classList.remove('off');clearTimeout(reconnTimer)};
-  ws.onmessage=function(e){handle(JSON.parse(e.data))};
-  ws.onclose=function(){$('dot').classList.add('off');reconnTimer=setTimeout(connect,3000)};
+  if(es){try{es.onerror=null;es.close();}catch(e){}}
+  clearTimeout(reconnTimer);
+  es=new EventSource('/events');
+  es.onopen=function(){$('dot').classList.remove('off');};
+  es.onmessage=function(e){handle(JSON.parse(e.data))};
+  es.onerror=function(){$('dot').classList.add('off');es.onerror=null;es.close();reconnTimer=setTimeout(connect,1000)};
 }
+// Reconnect immediately when the page becomes visible (e.g. after screen wake or app foreground)
+document.addEventListener('visibilitychange',function(){
+  if(!document.hidden&&(!es||es.readyState===2)){clearTimeout(reconnTimer);connect();}
+});
 
 function handle(ev){
+  if(ev.sentAt){var lag=Date.now()-ev.sentAt;$('lag').textContent=lag+'ms';}
   if(ev.type==='init'){if(ev.slide)showSlide(ev.slide);if(ev.blank)setBlank(ev.blank);if(ev.countdown)doCountdown(ev.countdown)}
   else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
   else if(ev.type==='blank'){setBlank(ev.isBlank)}
   else if(ev.type==='countdown'){doCountdown(ev.data)}
   else if(ev.type==='shutdown'){
     clearTimeout(reconnTimer);
-    if(ws){ws.onclose=null;ws.close();}
+    if(es){es.onerror=null;es.close();}
     $('dot').classList.add('off');
     $('song-title').textContent='Stage display stopped';
     $('section-badge').style.display='none';
@@ -1076,8 +535,7 @@ ipcMain.on('slide:show', (_event, payload) => {
   }
   stageSlide = payload
   stageBlank = false
-  stagePendingSlide = false
-  broadcastStage({ type: 'slide', payload })
+  broadcastAll({ type: 'slide', payload })
 })
 
 ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
@@ -1088,18 +546,10 @@ ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
     confidenceWindow.webContents.send('slide:blank', isBlank)
   }
   stageBlank = isBlank
-  // When unblanking, slide:show is always sent immediately after by the renderer.
-  // Skip the intermediate blank=false broadcast — the slide event already implies it,
-  // and sending two back-to-back events causes unnecessary repaints on slow devices.
-  if (!isBlank) {
-    stagePendingSlide = true
-    setImmediate(() => {
-      // If slide:show didn't arrive in this tick, send the blank update anyway
-      if (stagePendingSlide) { stagePendingSlide = false; broadcastStage({ type: 'blank', isBlank: false }) }
-    })
-    return
-  }
-  broadcastStage({ type: 'blank', isBlank })
+  // blank=true → broadcast immediately.
+  // blank=false → the subsequent slide:show already implies unblank on the client;
+  // no separate broadcast needed (avoids a double repaint on slow devices).
+  if (isBlank) broadcastAll({ type: 'blank', isBlank: true })
 })
 
 ipcMain.on('slide:logo', (_event, show: boolean) => {
@@ -1114,7 +564,7 @@ ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: bool
     confidenceWindow.webContents.send('slide:countdown', data)
   }
   stageCountdown = data
-  broadcastStage({ type: 'countdown', data })
+  broadcastAll({ type: 'countdown', data })
 })
 
 ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => {
@@ -1798,25 +1248,16 @@ ipcMain.handle('stageDisplay:getStatus', () => {
     running: !!stageServer,
     url: `http://${getLocalIP()}:${stagePort}`,
     mdnsUrl: `http://${getMdnsHostname()}:${stagePort}`,
-    controllerUrl: `http://${getLocalIP()}:${stagePort}/controller`,
-    controllerMdnsUrl: `http://${getMdnsHostname()}:${stagePort}/controller`,
     port: stagePort,
-    clients: stageClients.length,
+    clients: sseClients.length,
     localIP: getLocalIP(),
-    clientList: stageClients.map(c => ({
+    clientList: sseClients.map(c => ({
       ip: c.ip,
       device: parseDeviceLabel(c.userAgent),
       connectedAt: c.connectedAt,
       connectedForSeconds: Math.floor((now - c.connectedAt) / 1000),
     })),
   }
-})
-
-ipcMain.handle('stageDisplay:setLineup', (_e, items: unknown[], currentIdx: number) => {
-  stageLineup = items ?? []
-  stageCurrentLineupIdx = currentIdx ?? -1
-  broadcastStage({ type: 'lineup', items: stageLineup, currentIdx: stageCurrentLineupIdx })
-  return true
 })
 
 // ── Data export / import ──────────────────────────────────────────────────────
