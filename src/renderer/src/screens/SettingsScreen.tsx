@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react"
 import {
   Download, Upload, CheckCircle2, AlertCircle, Database, Clock,
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
-  Users, Tv,
+  Users,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -207,19 +207,12 @@ export default function SettingsScreen() {
   const [stageMdnsCopied, setStageMdnsCopied] = useState(false)
   const [stageLoading, setStageLoading]     = useState(false)
   const [showQR, setShowQR]                 = useState(false)
-  const [showControllerQR, setShowControllerQR] = useState(false)
-  const [controllerURL, setControllerURL]   = useState("")
-  const [controllerMdnsURL, setControllerMdnsURL] = useState("")
-  const [controllerCopied, setControllerCopied] = useState(false)
-  const [controllerMdnsCopied, setControllerMdnsCopied] = useState(false)
 
   const refreshStageStatus = useCallback(async () => {
     const s = await window.worshipsync.stageDisplay.getStatus()
     setStageRunning(s.running)
     setStageURL(s.url)
     setStageMdnsURL(s.mdnsUrl)
-    setControllerURL(s.controllerUrl ?? '')
-    setControllerMdnsURL(s.controllerMdnsUrl ?? '')
     setStagePortInput(String(s.port))
     setStageClients(s.clients)
     setStageClientList(s.clientList ?? [])
@@ -710,82 +703,6 @@ export default function SettingsScreen() {
                 </div>
               )}
             </Card>
-
-            {stageRunning && (
-              <Card>
-                <CardHeader icon={Tv} title="PWA Controller" description="Control slides remotely from any phone or tablet on the same Wi-Fi. Open the URL, add to home screen for a native-app feel." />
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Device name <span className="normal-case font-normal">(phones, tablets on same Wi-Fi)</span>
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 text-sm font-mono font-semibold bg-background border border-border rounded-lg px-3 py-2 truncate">
-                        {controllerMdnsURL}
-                      </code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(controllerMdnsURL).then(() => {
-                            setControllerMdnsCopied(true)
-                            setTimeout(() => setControllerMdnsCopied(false), 2000)
-                          })
-                        }}
-                        className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
-                      >
-                        {controllerMdnsCopied
-                          ? <><Check className="h-3.5 w-3.5 text-green-500" /> Copied</>
-                          : <><Copy className="h-3.5 w-3.5" /> Copy</>}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      IP address <span className="normal-case font-normal">(fallback)</span>
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 text-sm font-mono bg-background border border-border rounded-lg px-3 py-2 truncate text-muted-foreground">
-                        {controllerURL}
-                      </code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(controllerURL).then(() => {
-                            setControllerCopied(true)
-                            setTimeout(() => setControllerCopied(false), 2000)
-                          })
-                        }}
-                        className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
-                      >
-                        {controllerCopied
-                          ? <><Check className="h-3.5 w-3.5 text-green-500" /> Copied</>
-                          : <><Copy className="h-3.5 w-3.5" /> Copy</>}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <button
-                      onClick={() => setShowControllerQR(v => !v)}
-                      className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
-                    >
-                      {showControllerQR ? "Hide QR Code" : "Show QR Code"}
-                    </button>
-                    {showControllerQR && (
-                      <div className="mt-3 flex flex-col items-center gap-2">
-                        <div className="bg-white p-3 rounded-xl inline-block">
-                          <QRCodeSVG
-                            value={controllerMdnsURL || controllerURL}
-                            size={180}
-                            level="M"
-                          />
-                        </div>
-                        <p className="text-[11px] text-muted-foreground text-center">
-                          Scan to open the PWA controller on any device on the same Wi-Fi
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            )}
 
             <Card>
               <CardHeader

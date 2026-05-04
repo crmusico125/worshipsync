@@ -245,7 +245,6 @@ export default function MediaLibraryScreen() {
     return files.find(f => fileFolder[f.path] === folderId && isImage(f.path))?.path ?? null
   }
 
-  const hasSelection = selectedPaths.size > 0
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -378,22 +377,14 @@ export default function MediaLibraryScreen() {
               )}
             </div>
 
-            {hasSelection ? (
-              <div className="flex items-center gap-2 ml-auto">
-                <span className="text-xs text-muted-foreground">{selectedPaths.size} selected</span>
-                <button onClick={selectAll} className="text-[11px] text-primary hover:text-primary/80 font-medium">Select all</button>
-                <button onClick={clearSel}  className="text-[11px] text-muted-foreground hover:text-foreground">Clear</button>
-              </div>
-            ) : (
-              <span className="ml-auto text-[11px] text-muted-foreground">
-                {filteredFiles.length + (isFolderView(view) ? subFolders.length : 0)} items
-              </span>
-            )}
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {filteredFiles.length + (isFolderView(view) ? subFolders.length : 0)} items
+            </span>
           </div>
         </div>
 
         {/* Grid */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="flex-1 overflow-y-auto p-5 relative">
           {loading ? (
             <div className="h-full flex items-center justify-center">
               <p className="text-sm text-muted-foreground">Loading media…</p>
@@ -445,6 +436,7 @@ export default function MediaLibraryScreen() {
                             key={item.path}
                             item={item}
                             selected={selectedPaths.has(item.path)}
+                            selectionMode={selectedPaths.size > 0}
                             onSelect={() => toggleSelect(item.path)}
                             onInfo={() => setDetailItem(prev => prev?.path === item.path ? null : item)}
                           />
@@ -455,35 +447,65 @@ export default function MediaLibraryScreen() {
                 </div>
               )
             })()}
-        </div>
 
-        {/* Multi-select floating toolbar */}
-        {selectedPaths.size > 0 && (
-          <div className="shrink-0 border-t border-border bg-card px-5 py-3 flex items-center gap-3">
-            <span className="text-sm font-medium text-foreground">
-              {selectedPaths.size} {selectedPaths.size === 1 ? "item" : "items"} selected
-            </span>
-            <div className="ml-auto flex items-center gap-2">
+          {/* Floating selection bar */}
+          <div
+            className="sticky bottom-5 flex justify-center pointer-events-none"
+            style={{
+              opacity: selectedPaths.size > 0 ? 1 : 0,
+              transform: selectedPaths.size > 0 ? 'translateY(0)' : 'translateY(12px)',
+              transition: 'opacity 180ms ease, transform 180ms ease',
+            }}
+          >
+            <div className="pointer-events-auto flex items-center gap-1 px-2 py-1.5 rounded-2xl border border-border bg-card/80 shadow-xl backdrop-blur-md">
+              {/* Count */}
+              <span className="text-xs font-semibold text-foreground px-2">
+                {selectedPaths.size} {selectedPaths.size === 1 ? 'item' : 'items'} selected
+              </span>
+
+              <div className="w-px h-4 bg-border mx-0.5" />
+
+              {/* Select all */}
+              <button
+                onClick={selectAll}
+                className="text-xs font-medium text-primary hover:text-primary/80 px-2.5 py-1.5 rounded-xl hover:bg-primary/10 transition-colors"
+              >
+                Select all
+              </button>
+
+              <div className="w-px h-4 bg-border mx-0.5" />
+
+              {/* Move */}
               <button
                 onClick={() => setShowMoveDialog(true)}
-                className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-md px-3 py-1.5 hover:bg-accent transition-colors"
+                className="flex items-center gap-1.5 text-xs font-medium text-foreground px-2.5 py-1.5 rounded-xl hover:bg-accent transition-colors"
               >
                 <Move className="h-3.5 w-3.5" />
-                Move to…
+                Move to
               </button>
+
+              {/* Delete */}
               <button
                 onClick={() => handleDelete([...selectedPaths])}
-                className="flex items-center gap-1.5 text-xs font-medium border border-destructive/40 text-destructive rounded-md px-3 py-1.5 hover:bg-destructive/10 transition-colors"
+                className="flex items-center gap-1.5 text-xs font-medium text-destructive px-2.5 py-1.5 rounded-xl hover:bg-destructive/10 transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete
               </button>
-              <button onClick={clearSel} className="p-1.5 hover:bg-accent rounded-md transition-colors text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
+
+              <div className="w-px h-4 bg-border mx-0.5" />
+
+              {/* Dismiss */}
+              <button
+                onClick={clearSel}
+                className="p-1.5 rounded-xl hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>
-        )}
+        </div>
+
       </div>
 
       {/* ── Detail panel ─────────────────────────────────────────────────── */}
@@ -637,12 +659,13 @@ function FolderCard({
 // ── Media Card ────────────────────────────────────────────────────────────────
 
 function MediaCard({
-  item, selected, onSelect, onInfo,
+  item, selected, onSelect, onInfo, selectionMode,
 }: {
   item: MediaItem
   selected: boolean
   onSelect: () => void
   onInfo: () => void
+  selectionMode: boolean
 }) {
   return (
     <div
@@ -652,7 +675,7 @@ function MediaCard({
           : "border-border hover:border-muted-foreground/40"
       }`}
       style={{ aspectRatio: "16/9" }}
-      onClick={onInfo}
+      onClick={selectionMode ? onSelect : onInfo}
     >
       {isVideoFile(item.path) ? (
         <video
@@ -907,29 +930,31 @@ function MoveFolderDialog({
   const available = folders.filter(f => !excludeIds.has(f.id))
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogTitle>Move to folder</DialogTitle>
-        <div className="mt-2 space-y-1 max-h-60 overflow-y-auto">
-          <button
-            onClick={() => setTargetId(null)}
-            className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${targetId === null ? "bg-primary/10 text-primary font-semibold" : "hover:bg-accent"}`}
-          >
-            <FolderOpen className="h-4 w-4" /> Library root
-          </button>
-          {available.map(f => (
+      <DialogContent className="max-w-sm p-6">
+        <DialogTitle className="mb-4">Move to folder</DialogTitle>
+        <div className="rounded-md border border-border overflow-hidden">
+          <div className="space-y-0.5 max-h-60 overflow-y-auto p-1.5">
             <button
-              key={f.id}
-              onClick={() => setTargetId(f.id)}
-              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${targetId === f.id ? "bg-primary/10 text-primary font-semibold" : "hover:bg-accent"}`}
+              onClick={() => setTargetId(null)}
+              className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${targetId === null ? "bg-primary/10 text-primary font-semibold" : "hover:bg-accent"}`}
             >
-              <FolderIcon className="h-4 w-4" /> {f.name}
+              <FolderOpen className="h-4 w-4" /> Library root
             </button>
-          ))}
-          {available.length === 0 && (
-            <p className="px-3 py-4 text-xs text-muted-foreground text-center">No folders yet. Create one first.</p>
-          )}
+            {available.map(f => (
+              <button
+                key={f.id}
+                onClick={() => setTargetId(f.id)}
+                className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${targetId === f.id ? "bg-primary/10 text-primary font-semibold" : "hover:bg-accent"}`}
+              >
+                <FolderIcon className="h-4 w-4" /> {f.name}
+              </button>
+            ))}
+            {available.length === 0 && (
+              <p className="px-3 py-4 text-xs text-muted-foreground text-center">No folders yet. Create one first.</p>
+            )}
+          </div>
         </div>
-        <div className="flex justify-end gap-2 mt-4">
+        <div className="flex justify-end gap-2 mt-5">
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
           <Button size="sm" onClick={() => onMove(targetId)}>Move Here</Button>
         </div>

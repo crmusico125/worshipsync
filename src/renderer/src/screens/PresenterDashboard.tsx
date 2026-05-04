@@ -361,15 +361,6 @@ export default function PresenterDashboard({
   }, [lineup, themeCache]);
 
   // Sync lineup to stage display / PWA controller whenever the live song list or selection changes
-  useEffect(() => {
-    const items = liveSongs.map((s) => ({
-      title: s.title,
-      artist: s.artist,
-      slideCount: s.slides.length,
-      itemType: s.itemType,
-    }));
-    window.worshipsync.stageDisplay.setLineup(items, selectedSongIdx).catch(() => {});
-  }, [liveSongs, selectedSongIdx]);
 
   // ── Theme + background resolution ────────────────────────────────────────
   const resolveTheme = useCallback(
@@ -580,17 +571,6 @@ export default function PresenterDashboard({
     if (next < song.slides.length) sendSlide(selectedSongIdx, next);
     else goNextSong();
   }, [activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, goNextSong]);
-
-  const goNextSection = useCallback(() => {
-    const song = liveSongs[selectedSongIdx];
-    if (!song || activeSlideIdx < 0) return;
-    const currentLabel = song.slides[activeSlideIdx]?.sectionLabel;
-    const nextIdx = song.slides.findIndex(
-      (s, i) => i > activeSlideIdx && s.sectionLabel !== currentLabel && s.sectionType !== 'blank'
-    );
-    if (nextIdx >= 0) sendSlide(selectedSongIdx, nextIdx);
-    else goNextSong();
-  }, [liveSongs, selectedSongIdx, activeSlideIdx, sendSlide, goNextSong]);
 
   const startLive = () => {
     window.worshipsync.window.openProjection(selectedDisplayId);
@@ -844,25 +824,6 @@ export default function PresenterDashboard({
   }, [goNextSlide, goPrevSlide, goNextSong, goPrevSong, isBlank, activeSlideIdx, selectedSongIdx, sendSlide, toBlack]);
 
 
-  useEffect(() => {
-    if (!window.worshipsync.pwa) return;
-    const cleanup = window.worshipsync.pwa.onControl((cmd) => {
-      switch (cmd.action) {
-        case 'next':        goNextSlide();  break;
-        case 'prev':        goPrevSlide();  break;
-        case 'nextSection': goNextSection(); break;
-        case 'blank':
-          if (isBlankRef.current) {
-            if (activeSlideIdxRef.current >= 0) sendSlide(selectedSongIdxRef.current, activeSlideIdxRef.current);
-            else { window.worshipsync.slide.blank(false); setIsBlank(false); }
-          } else { toBlack(); }
-          break;
-        case 'clearText': clearText(); break;
-        case 'logo':      showLogo();  break;
-      }
-    });
-    return cleanup;
-  }, [goNextSlide, goPrevSlide, goNextSection, sendSlide, toBlack, clearText, showLogo]);
 
   // Scroll active slide into view when it changes
   useEffect(() => {
