@@ -527,10 +527,10 @@ export default function ProjectionWindow() {
             right: 0,
             zIndex: 3,
             textAlign: "center",
-            fontSize: 20,
+            fontSize: 36,
             fontFamily: theme.fontFamily,
-            fontWeight: "500",
-            color: "rgba(255,255,255,0.5)",
+            fontWeight: "600",
+            color: "rgba(255,255,255,0.75)",
             letterSpacing: "0.02em",
           }}
         >
