@@ -187,6 +187,8 @@ export default function PresenterDashboard({
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
+  const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; path: string | null } | null>(null);
+  const [savingBg, setSavingBg] = useState(false);
   const [showEditLyrics, setShowEditLyrics] = useState(false);
   const [editLyricsInitial, setEditLyricsInitial] = useState("");
   const [displays, setDisplays] = useState<
@@ -677,16 +679,27 @@ export default function PresenterDashboard({
   };
 
   // ── Background picker ────────────────────────────────────────────────────
-  const handleBackgroundSelect = useCallback(async (bg: string | null) => {
+  const handleBackgroundSelect = useCallback((bg: string | null) => {
     const song = liveSongs[selectedSongIdx];
     if (!song) return;
-    await window.worshipsync.backgrounds.setBackground(song.songId, bg);
-    // Reflect the change locally so the slide re-renders immediately
+    // Apply immediately to the live session only — do not persist to DB yet
     setLiveSongs(prev => prev.map((s, i) =>
       i === selectedSongIdx ? { ...s, backgroundPath: bg } : s
     ));
-    setShowBgPicker(false);
+    setPendingBgSave({ songId: song.songId, path: bg });
   }, [liveSongs, selectedSongIdx]);
+
+  const handleSaveBgToSong = useCallback(async () => {
+    if (!pendingBgSave) return;
+    setSavingBg(true);
+    try {
+      await window.worshipsync.backgrounds.setBackground(pendingBgSave.songId, pendingBgSave.path);
+      setPendingBgSave(null);
+      setShowBgPicker(false);
+    } finally {
+      setSavingBg(false);
+    }
+  }, [pendingBgSave]);
 
   // ── Edit lyrics ──────────────────────────────────────────────────────────
   const handleOpenEditLyrics = useCallback(async () => {
@@ -2158,19 +2171,37 @@ export default function PresenterDashboard({
       )}
 
       {showBgPicker && liveSongs[selectedSongIdx] && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBgPicker(false)}>
-          <div className="bg-card border border-border rounded-xl shadow-2xl w-[420px] max-h-[80vh] overflow-y-auto p-4" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowBgPicker(false); setPendingBgSave(null); }}>
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-[420px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
               <span className="text-sm font-semibold">Background</span>
-              <button onClick={() => setShowBgPicker(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={() => { setShowBgPicker(false); setPendingBgSave(null); }} className="text-muted-foreground hover:text-foreground transition-colors">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <BackgroundPickerPanel
-              currentBackground={liveSongs[selectedSongIdx].backgroundPath}
-              previewLabel={liveSongs[selectedSongIdx].title}
-              onSelect={handleBackgroundSelect}
-            />
+            <div className="overflow-y-auto p-4">
+              <BackgroundPickerPanel
+                currentBackground={liveSongs[selectedSongIdx].backgroundPath}
+                previewLabel={liveSongs[selectedSongIdx].title}
+                onSelect={handleBackgroundSelect}
+              />
+            </div>
+            {pendingBgSave && (
+              <div className="shrink-0 border-t border-border bg-muted/40 px-4 py-3 flex items-center gap-3">
+                <p className="text-xs text-muted-foreground flex-1">
+                  Applied for this session only.
+                </p>
+                <button
+                  onClick={() => { setPendingBgSave(null); setShowBgPicker(false); }}
+                  className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Keep session only
+                </button>
+                <Button size="sm" className="h-7 text-xs gap-1.5" onClick={handleSaveBgToSong} disabled={savingBg}>
+                  {savingBg ? "Saving…" : "Save to song"}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

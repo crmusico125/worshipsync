@@ -72,6 +72,7 @@ interface Props {
 export default function EditLyricsModal({ songTitle, artist, initialLyrics, onClose, onSave }: Props) {
   const [lyrics, setLyrics] = useState(initialLyrics)
   const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const slides = parseLyricsToSlides(lyrics)
 
@@ -90,6 +91,10 @@ export default function EditLyricsModal({ songTitle, artist, initialLyrics, onCl
     setSaving(true)
     try { await onSave(lyrics) } finally { setSaving(false) }
     onClose()
+  }
+
+  const handleSaveClick = () => {
+    setConfirming(true)
   }
 
   return (
@@ -160,11 +165,24 @@ export default function EditLyricsModal({ songTitle, artist, initialLyrics, onCl
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-3 border-t border-border shrink-0">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={saving} onClick={handleSave}>
-              {saving ? "Saving…" : "Save Changes"}
-            </Button>
+          <div className="flex items-center gap-3 px-6 py-3 border-t border-border shrink-0">
+            {confirming ? (
+              <>
+                <p className="text-xs text-muted-foreground flex-1">
+                  This will update <span className="font-semibold text-foreground">"{songTitle}"</span> in your library.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>Go back</Button>
+                <Button size="sm" disabled={saving} onClick={handleSave}>
+                  {saving ? "Saving…" : "Confirm save"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="flex-1" />
+                <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                <Button size="sm" onClick={handleSaveClick}>Save Changes</Button>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>
