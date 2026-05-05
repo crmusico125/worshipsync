@@ -21,6 +21,7 @@ interface MediaItem {
   path: string
   filename: string
   usageCount: number
+  serviceCount: number
 }
 
 type ViewMode = "all" | "recent" | string   // string = folderId
@@ -85,11 +86,19 @@ export default function MediaLibraryScreen() {
     const paths: string[] = await window.worshipsync.backgrounds.listImages()
     const items: MediaItem[] = await Promise.all(
       paths.map(async (p) => {
+        const isMediaFile = isAudioFile(p) || isVideoFile(p)
         const usingSongs: { artist: string }[] = await window.worshipsync.backgrounds.getUsingSongs(p)
+        const songCount = usingSongs.filter(s => s.artist !== 'Scripture' && s.artist !== 'Media').length
+        let serviceCount = 0
+        if (isMediaFile) {
+          const svcList: { id: number }[] = await window.worshipsync.backgrounds.getUsingServices(p)
+          serviceCount = svcList.length
+        }
         return {
           path: p,
           filename: p.split("/").pop() ?? p,
-          usageCount: usingSongs.filter(s => s.artist !== 'Scripture' && s.artist !== 'Media').length,
+          usageCount: songCount,
+          serviceCount,
         }
       })
     )
@@ -714,9 +723,11 @@ function MediaCard({
       )}
 
       {/* Usage badge */}
-      {item.usageCount > 0 && (
+      {(item.usageCount > 0 || item.serviceCount > 0) && (
         <div className="absolute top-2 left-2 bg-black/60 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded">
-          {item.usageCount} {item.usageCount === 1 ? "song" : "songs"}
+          {item.serviceCount > 0
+            ? `${item.serviceCount} ${item.serviceCount === 1 ? "service" : "services"}`
+            : `${item.usageCount} ${item.usageCount === 1 ? "song" : "songs"}`}
         </div>
       )}
 

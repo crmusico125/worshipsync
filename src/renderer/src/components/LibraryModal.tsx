@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2 } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -96,7 +96,8 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
   const [mediaLoading, setMediaLoading] = useState(false)
   const [mediaSelected, setMediaSelected] = useState<string | null>(null)
   const [mediaUploading, setMediaUploading] = useState(false)
-  const [mediaUsingSongs, setMediaUsingSongs] = useState<{ id: number; title: string; artist: string }[]>([])
+  const [mediaUsingSongs,    setMediaUsingSongs]    = useState<{ id: number; title: string; artist: string }[]>([])
+  const [mediaUsingServices, setMediaUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
 
   const loadMediaImages = useCallback(async () => {
     setMediaLoading(true)
@@ -117,8 +118,14 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
   useEffect(() => { if (tab === "media") loadMediaImages() }, [tab, loadMediaImages])
 
   useEffect(() => {
-    if (!mediaSelected) { setMediaUsingSongs([]); return }
+    if (!mediaSelected) { setMediaUsingSongs([]); setMediaUsingServices([]); return }
+    const isMediaFile = /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(mediaSelected)
     window.worshipsync.backgrounds.getUsingSongs(mediaSelected).then(setMediaUsingSongs).catch(() => setMediaUsingSongs([]))
+    if (isMediaFile) {
+      window.worshipsync.backgrounds.getUsingServices(mediaSelected).then(setMediaUsingServices).catch(() => setMediaUsingServices([]))
+    } else {
+      setMediaUsingServices([])
+    }
   }, [mediaSelected])
 
   const filteredMedia = useMemo(() => {
@@ -448,20 +455,45 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Filename</span>
                             <p className="text-foreground truncate mt-0.5">{item.filename}</p>
                           </div>
-                          <div>
-                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Used by</span>
-                            <p className="text-foreground mt-0.5">
-                              {item.usageCount > 0 ? `${item.usageCount} ${item.usageCount === 1 ? "song" : "songs"}` : "Not used"}
-                            </p>
-                          </div>
-                          {mediaUsingSongs.length > 0 && (
-                            <div className="flex flex-col gap-1 mt-1">
-                              {mediaUsingSongs.map((s) => (
-                                <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted">
-                                  <Music2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                  <span className="text-[11px] truncate">{s.title}</span>
+                          {/\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? (
+                            <div>
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                Services ({mediaUsingServices.length})
+                              </span>
+                              {mediaUsingServices.length > 0 ? (
+                                <div className="flex flex-col gap-1 mt-1">
+                                  {mediaUsingServices.map((svc) => (
+                                    <div key={svc.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted">
+                                      <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+                                      <div className="min-w-0">
+                                        <p className="text-[11px] truncate font-medium">{svc.label}</p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                          {new Date(svc.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
+                              ) : (
+                                <p className="text-muted-foreground mt-0.5">Not in any service</p>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Used by</span>
+                              <p className="text-foreground mt-0.5">
+                                {item.usageCount > 0 ? `${item.usageCount} ${item.usageCount === 1 ? "song" : "songs"}` : "Not used"}
+                              </p>
+                              {mediaUsingSongs.filter(s => s.artist !== 'Scripture' && s.artist !== 'Media').length > 0 && (
+                                <div className="flex flex-col gap-1 mt-1">
+                                  {mediaUsingSongs.filter(s => s.artist !== 'Scripture' && s.artist !== 'Media').map((s) => (
+                                    <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted">
+                                      <Music2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                      <span className="text-[11px] truncate">{s.title}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                           <div className="mt-auto pt-2">
