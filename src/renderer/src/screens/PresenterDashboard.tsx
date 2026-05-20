@@ -1981,7 +1981,7 @@ export default function PresenterDashboard({
                         </span>
                       </div>
                     ) : currentSlide && !isBlank ? (
-                      currentSlide.sectionType === "verse" ? (
+                      currentSlide.sectionType === "verse" && currentSong?.itemType === "scripture" ? (
                         /* Scripture: verse text + reference at bottom */
                         <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
                           <div className="flex-1 flex items-center justify-center min-h-0">
@@ -2040,7 +2040,7 @@ export default function PresenterDashboard({
                           )
                         )}
                         {nextUp && nextUp.slide.sectionType !== "blank" ? (
-                          nextUp.slide.sectionType === "verse" ? (
+                          nextUp.slide.sectionType === "verse" && nextUpSong?.itemType === "scripture" ? (
                             /* Scripture: verse text + reference at bottom */
                             <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
                               <div className="flex-1 flex items-center justify-center min-h-0">
@@ -2119,21 +2119,21 @@ export default function PresenterDashboard({
                   const abbrev = SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
                   return (
                     <div key={i} data-slide-idx={i} className="flex flex-col gap-1">
-                      {/* Label row — only for non-scripture slides */}
-                      {slide.sectionType !== "verse" && (
-                        <div className="flex items-center justify-between gap-1 px-0.5 h-4">
-                          <div className="flex items-center gap-1">
-                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
+                      {/* Label row */}
+                      <div className="flex items-center justify-between gap-1 px-0.5 h-4">
+                        <div className="flex items-center gap-1 min-w-0">
+                          {currentSong.itemType !== "scripture" && slide.sectionType !== "blank" && (
+                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none shrink-0 ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
                               {abbrev}
                             </span>
-                            <span className={`text-[10px] font-semibold ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
-                              {slide.sectionLabel}
-                            </span>
-                          </div>
-                          {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none">LIVE</span>}
-                          {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none">NEXT</span>}
+                          )}
+                          <span className={`text-[10px] font-semibold truncate ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
+                            {slide.sectionLabel}
+                          </span>
                         </div>
-                      )}
+                        {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none shrink-0">LIVE</span>}
+                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none shrink-0">NEXT</span>}
+                      </div>
                       <button
                         onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
                         className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-colors ${
@@ -2159,7 +2159,7 @@ export default function PresenterDashboard({
                             <div className="absolute inset-0 bg-black" />
                           )}
 
-                          {slide.sectionType === "verse" ? (
+                          {slide.sectionType === "verse" && currentSong.itemType === "scripture" ? (
                             /* Scripture: verse text centered + reference at bottom */
                             <div className="absolute inset-0 flex flex-col px-1.5 pt-1.5 pb-1">
                               <div className="flex-1 flex items-center justify-center min-h-0">
@@ -2172,9 +2172,6 @@ export default function PresenterDashboard({
                                 style={{ color: "rgba(255,255,255,0.6)", fontFamily: effectiveTheme.fontFamily }}>
                                 {slide.sectionLabel}
                               </p>
-                              {/* LIVE / NEXT badges inside thumbnail for scripture */}
-                              {isActive && <span className="absolute top-1 right-1 text-[7px] font-bold px-1 py-0.5 rounded bg-red-500/80 text-white leading-none z-20">LIVE</span>}
-                              {isNextSlide && <span className="absolute top-1 right-1 text-[7px] font-bold px-1 py-0.5 rounded bg-green-500/70 text-white leading-none z-20">NEXT</span>}
                             </div>
                           ) : (
                             /* Songs / other: original centered layout */
